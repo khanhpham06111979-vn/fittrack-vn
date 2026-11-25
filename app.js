@@ -22,11 +22,11 @@ const defaults = () => ({
   profile: { name: '', sex: 'm', age: 30, height: 170, weight: 70, goalWeight: 0, goal: 'recomp', activity: 1.375, weeklyGoal: 3, rest: 90, accent: '#B7E21E', mode: 'auto' },
   remind: { on: false, days: [1, 3, 5], time: '18:00' }, deload: { on: false, start: 0, last: 0, every: 6 }, customFoods: [],
   routines: JSON.parse(JSON.stringify(DEFAULT_ROUTINES)), customEx: [],
-  sessions: [], cardio: [], body: [], food: {}, water: {}, active: null, updated: 0,
+  sessions: [], cardio: [], body: [], food: {}, water: {}, active: null, updated: 0, health: { records: [], imaging: [], notes: [], recheck: '' },
 });
 let S = load();
 function load() {
-  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d) { const b = defaults(); return { ...b, ...d, profile: { ...b.profile, ...d.profile }, remind: { ...b.remind, ...d.remind }, deload: { ...b.deload, ...d.deload } }; } } catch (e) {}
+  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d) { const b = defaults(); return { ...b, ...d, profile: { ...b.profile, ...d.profile }, remind: { ...b.remind, ...d.remind }, deload: { ...b.deload, ...d.deload }, health: { ...b.health, ...d.health } }; } } catch (e) {}
   return defaults();
 }
 function save() { S.updated = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} schedPush(); }
@@ -122,7 +122,7 @@ const head = (t, back) => `<div class="head">${back ? `<a class="back" href="${b
 const NAV = [['#/', 'Home', '🏠', 'Trang chủ'], ['#/train', 'train', '🏋️', 'Tập'], ['#/food', 'food', '🍚', 'Ăn uống'], ['#/progress', 'progress', '📈', 'Tiến độ'], ['#/profile', 'profile', '👤', 'Hồ sơ']];
 function drawNav(route) {
   const key = route.split('/')[1] || 'Home';
-  const map = { workout: 'train', routine: 'train', cardio: 'train', exercises: 'train', body: 'progress' };
+  const map = { workout: 'train', routine: 'train', cardio: 'train', exercises: 'train', body: 'progress', health: 'profile' };
   const cur = map[key] || key;
   $('#nav').innerHTML = NAV.map(([h, k, ic, lb]) => `<a href="${h}" class="${cur === k ? 'on' : ''}"><span class="ic">${ic}</span>${lb}</a>`).join('');
 }
@@ -149,7 +149,7 @@ function vHome() {
     <div class="row mt"><button class="btn" data-a="start" data-id="${nx.id}">Bắt đầu</button><a class="btn" href="#/train" style="background:transparent;color:var(--acc-ink);border:1px solid var(--acc-ink)">Chọn buổi khác</a></div></div>`;
   }
   return `<div class="sub">${hi}${p.name ? ', ' + esc(p.name) : ''}</div><h1>Hôm nay</h1>${top}
-  ${todayCard()}
+  ${healthCard()}${todayCard()}
   <h2>Tuần này</h2><div class="card"><div class="row"><div class="dots">${dots}</div><span class="sp"></span><b>${w.sessions}/${p.weeklyGoal} buổi tạ</b></div>
   <div class="sub mt">Chạy/cardio: ${round(w.km, 1)} km · ${Math.round(w.cardioMin)} phút · Chuỗi tuần đạt mục tiêu: ${weekStreak()} 🔥</div></div>
   <h2>Dinh dưỡng hôm nay</h2><a class="card" href="#/food" style="display:block"><div class="row"><b>${Math.round(ft.k)}</b><span class="sub">/ ${t.kcal} kcal</span><span class="sp"></span><b>${Math.round(ft.p)}</b><span class="sub">/ ${t.protein}g đạm</span></div>
@@ -231,7 +231,7 @@ function vWorkout() {
   }).join('');
   return `<div class="row">${head(esc(a.name))}<span class="sp"></span><b id="elapsed" class="sub">${fmtDur((Date.now() - a.start) / 1000)}</b></div>
   <div class="row"><span class="sub">Giờ bắt đầu</span><input type="datetime-local" data-in="wstart" value="${dtl(a.start)}" max="${dtl(Date.now())}" style="width:auto;flex:1"></div>
-  ${prevNote}<div class="sub">Khởi động 5 phút (xoay khớp, set nhẹ đầu tiên) trước khi vào tạ nặng.</div>${cards}
+  ${prevNote}${healthHint()}<div class="sub">Khởi động 5 phút (xoay khớp, set nhẹ đầu tiên) trước khi vào tạ nặng.</div>${cards}
   <button class="btn block" data-a="addEx">+ Thêm bài</button>
   <div class="card"><label>Cảm giác buổi tập</label><div class="days">${[['😫', 'Mệt'], ['😐', 'Bình thường'], ['🙂', 'Tốt'], ['💪', 'Rất tốt']].map((m, i) => `<button class="btn ${a.feel === i + 1 ? 'on' : ''}" data-a="feel" data-v="${i + 1}" aria-label="${m[1]}">${m[0]}</button>`).join('')}</div>
   <label>Ghi chú (đau mỏi, tạ cảm thấy nặng/nhẹ, bài cần đổi...)</label><textarea data-in="note" rows="3" placeholder="Ghi chú cho buổi này">${esc(a.note || '')}</textarea></div>
@@ -329,7 +329,7 @@ const shrink = (file, max = 1000) => new Promise((res, rej) => { const img = new
 let photos = [];
 async function loadPhotos() {
   const box = $('#photos'); if (!box) return;
-  try { photos = ((await idbDo('readonly', s => s.getAll())) || []).sort((a, b) => a.date - b.date); } catch (e) { box.innerHTML = '<div class="empty">Trình duyệt này không cho lưu ảnh.</div>'; return; }
+  try { photos = ((await idbDo('readonly', s => s.getAll())) || []).filter(p => !p.kind).sort((a, b) => a.date - b.date); } catch (e) { box.innerHTML = '<div class="empty">Trình duyệt này không cho lưu ảnh.</div>'; return; }
   photos.forEach(p => p.url = URL.createObjectURL(p.blob));
   box.innerHTML = photos.length ? `<div class="grid3">${[...photos].reverse().map(p => `<div data-a="photoView" data-id="${p.id}" style="cursor:pointer"><img src="${p.url}" alt="" style="width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:12px"><div class="sub" style="text-align:center">${fmtD(p.date)} · ${esc(p.label)}</div></div>`).join('')}</div><button class="btn block mt" data-a="photoCmp">↔ So sánh trước và sau</button>` : '<div class="empty">Chưa có ảnh nào. Chụp cùng góc, cùng ánh sáng mỗi 2–4 tuần để so sánh rõ nhất.</div>';
 }
@@ -345,7 +345,7 @@ let foodSel = null;
 function openFood(name) {
   const f = foodPool().find(x => x.n === name); if (!f) return; foodSel = f;
   modal(`<h3>${esc(f.n)}</h3><div class="sub">${f.g ? `${round(f.k / f.g * 100)} kcal · ${round(f.p / f.g * 100, 1)}g đạm mỗi 100${f.ml ? 'ml' : 'g'} (1 khẩu phần ≈ ${f.g}${f.ml ? 'ml' : 'g'})` : `${f.k} kcal · ${f.p}g đạm mỗi khẩu phần`}</div>
-  ${f.w ? '<div class="sub">Gần như không calo, được cộng vào mục nước uống.</div>' : ''}${f.alc ? '<div class="hint">Cồn cộng calo "rỗng" và làm chậm phục hồi cơ, nên hạn chế khi đang giảm mỡ hoặc tăng cơ.</div>' : ''}<div class="grid2"><div><label>${f.ml ? 'Số ly/lon/chai' : 'Số khẩu phần'}</label><input id="fm-q" inputmode="decimal" data-in="fm" data-f="q" value="1"></div>${f.g ? `<div><label>${f.ml ? 'Hoặc nhập ml' : 'Hoặc nhập gam'}</label><input id="fm-g" inputmode="decimal" data-in="fm" data-f="g" value="${f.g}"></div>` : ''}</div>
+  ${f.w ? '<div class="sub">Gần như không calo, được cộng vào mục nước uống.</div>' : ''}${(f.pur || f.alc) && uricHigh() ? '<div class="hint">⚠️ Acid uric của bạn đang cao: nên hạn chế món/đồ uống này (nhiều purin hoặc đường fructose, hoặc cồn).</div>' : ''}${f.alc ? '<div class="hint">Cồn cộng calo "rỗng" và làm chậm phục hồi cơ, nên hạn chế khi đang giảm mỡ hoặc tăng cơ.</div>' : ''}<div class="grid2"><div><label>${f.ml ? 'Số ly/lon/chai' : 'Số khẩu phần'}</label><input id="fm-q" inputmode="decimal" data-in="fm" data-f="q" value="1"></div>${f.g ? `<div><label>${f.ml ? 'Hoặc nhập ml' : 'Hoặc nhập gam'}</label><input id="fm-g" inputmode="decimal" data-in="fm" data-f="g" value="${f.g}"></div>` : ''}</div>
   <div class="row mt"><label style="margin:0">Giờ ăn</label><input id="fm-t" type="time" value="${foodDay === dk() ? nowT() : '12:00'}" style="width:auto;flex:1"></div><div class="stat mt" id="fm-pre"></div><button class="btn pri block mt" data-a="foodAdd">Thêm vào ${dayLabel(foodDay).toLowerCase()}</button><button class="btn ghost block" data-a="closeModal">Đóng</button>`);
   fmUpdate('q');
 }
@@ -385,7 +385,7 @@ function vProgress() {
     lift = `<select data-in="progEx">${used.map(id => `<option value="${id}" ${id === progEx ? 'selected' : ''}>${esc(exOf(id).name)}</option>`).join('')}</select><div class="sub mt">${ex.type === 'time' ? 'Thời gian tốt nhất mỗi buổi (giây)' : 'Sức mạnh ước tính (1RM) mỗi buổi, kg'}</div>${lineChart(pts)}`;
   } else lift = '<div class="empty">Hoàn thành vài buổi tập để xem tiến bộ từng bài.</div>';
   return `${head('Tiến độ')}<div class="grid3"><div class="stat"><b>${t}</b><span>Buổi tạ</span></div><div class="stat"><b>${round(tv / 1000, 1)}t</b><span>Tổng tạ</span></div><div class="stat"><b>${round(km, 1)}</b><span>Km đã chạy</span></div></div>
-  <div class="grid2 mt"><a class="btn" href="#/body">⚖️ Cân nặng & số đo</a><a class="btn" href="#/cardio">🏃 Cardio</a></div>
+  <div class="grid2 mt"><a class="btn" href="#/body">⚖️ Cân nặng & số đo</a><a class="btn" href="#/cardio">🏃 Cardio</a></div><a class="btn block mt" href="#/health">🩺 Hồ sơ sức khoẻ</a>
   ${vInsights()}
   <h2>Số buổi tạ mỗi tuần</h2><div class="card">${barChart(cnt)}</div><h2>Khối lượng tạ mỗi tuần (tấn)</h2><div class="card">${barChart(vol)}</div><h2>Tiến bộ theo bài</h2><div class="card">${lift}</div>${vTiming()}`;
 }
@@ -448,6 +448,17 @@ function vInsights() {
   const add = (lvl, title, body) => I.push({ lvl, title, body });
   const ss = [...S.sessions].sort((a, b) => a.date - b.date), first = ss.length ? ss[0].date : now, histDays = (now - first) / DAY;
   const kpi = { adh: null, kc: null, pr: null, wt: null };
+  if (uricHigh()) {
+    const since = dk(now - 14 * DAY), ents = Object.keys(S.food).filter(k => k >= since).flatMap(k => S.food[k]), bad = ents.filter(f => f.pur || f.alc);
+    const wd = Object.keys(S.water).filter(k => k >= since && S.water[k] > 0).map(k => S.water[k]), wavg = avgOf(wd);
+    add(bad.length ? 'warn' : 'good', 'Acid uric: món cần hạn chế', bad.length ? `14 ngày qua bạn ghi ${bad.length} lần món hoặc đồ uống dễ làm tăng acid uric (${[...new Set(bad.map(f => f.n.replace(/ \(.*/, '')))].slice(0, 5).join(', ')}). Thử giảm dần, nhất là bia rượu và nước ngọt.` : 'Nhật ký 14 ngày qua chưa có món nhiều purin hoặc đường. Hãy duy trì.');
+    add(wd.length && wavg >= 2000 ? 'good' : 'warn', 'Uống nước khi acid uric cao', wd.length ? `Trung bình ${Math.round(wavg)} ml/ngày. Thường khuyến nghị khoảng 2000–2500 ml/ngày nếu bác sĩ không hạn chế.` : 'Chưa ghi lượng nước. Hãy ghi nước lọc ở tab Ăn uống để theo dõi mục tiêu 2–2,5 lít/ngày.');
+  }
+  if (fattyLiver()) {
+    const bw = S.body.filter(b => b.weight).sort((a, b) => a.date - b.date);
+    if (bw.length >= 2) { const p = (bw[0].weight - bw[bw.length - 1].weight) / bw[0].weight * 100; add(p >= 5 ? 'good' : 'info', 'Gan nhiễm mỡ: tiến độ giảm cân', `Đã ${p >= 0 ? 'giảm' : 'tăng'} ${round(Math.abs(p), 1)}% cân nặng so với lần cân đầu (${bw[0].weight} → ${bw[bw.length - 1].weight} kg). Giảm 5–10% cân nặng thường cải thiện rõ gan nhiễm mỡ.`); }
+    else add('info', 'Gan nhiễm mỡ: mục tiêu cân nặng', `Giảm khoảng 5–10% cân nặng (${round(lastWeight() * .05, 1)}–${round(lastWeight() * .1, 1)} kg) thường cải thiện rõ. Hãy ghi cân nặng đều để theo dõi.`);
+  }
 
   /* 1. Tuân thủ lịch tập */
   const fullWeeks = weeksBack(5).slice(0, -1).filter(w => w >= weekStart(first)).map(w => weekStats(w).sessions);
@@ -559,6 +570,85 @@ function vInsights() {
   return `<h2>Chỉ số chính</h2>${kp}${unlock}<h2>Nhận định của chuyên gia</h2>${cards || '<div class="empty">Chưa có nhận định.</div>'}<div class="sub" style="margin:6px 4px">Nhận định dựa trên quy tắc phổ biến trong huấn luyện và dinh dưỡng thể thao, mang tính tham khảo, không thay thế tư vấn y tế hay huấn luyện viên.</div>${charts.join('')}`;
 }
 
+/* ---------- Hồ sơ sức khoẻ ---------- */
+const mkOf = k => MARKERS.find(m => m.k === k);
+const hStatus = (m, v) => m.lo != null && v < m.lo ? 'L' : m.hi != null && v > m.hi ? 'H' : m.opt != null && v > m.opt ? 'N' : 'ok';
+function hLatest(k) {
+  const rs = S.health.records.filter(r => r.v && r.v[k] != null).sort((a, b) => b.date - a.date);
+  return rs.length ? { v: rs[0].v[k], date: rs[0].date, rid: rs[0].id, prev: rs[1] ? { v: rs[1].v[k], date: rs[1].date } : null } : null;
+}
+const hFlags = () => MARKERS.map(m => { const l = hLatest(m.k); return l ? { m, l, st: hStatus(m, l.v) } : null; }).filter(x => x && x.st !== 'ok');
+const fattyLiver = () => S.health.imaging.some(i => /gan nhiễm mỡ/i.test((i.conclusion || '') + ' ' + (i.title || '')));
+const uricHigh = () => { const l = hLatest('uric'); return !!l && l.v > mkOf('uric').hi; };
+const refTxt = m => m.lo != null && m.hi != null ? `${m.lo}–${m.hi}` : m.hi != null ? `≤ ${m.hi}` : `≥ ${m.lo}`;
+const stInfo = { H: ['Cao', 'warn'], L: ['Thấp', 'warn'], N: ['Hơi cao', 'info'], ok: ['Bình thường', 'good'] };
+function healthHint() {
+  const p = [];
+  if (uricHigh()) p.push('Acid uric đang cao: uống đủ nước trước, trong và sau tập; tránh tập đến kiệt sức.');
+  if (fattyLiver()) p.push('Gan nhiễm mỡ: ưu tiên tập đều đặn, kết hợp cardio vừa sức.');
+  S.health.notes.slice(0, 3).forEach(n => p.push('Bác sĩ dặn: ' + n.text));
+  return p.length ? `<div class="hint">🩺 ${p.map(esc).join('<br>🩺 ')}</div>` : '';
+}
+function healthCard() {
+  const H = S.health; if (!H.records.length && !H.imaging.length) return '';
+  const fl = hFlags(), chips = fl.map(x => `<span class="chip ${stInfo[x.st][1]}">${esc(x.m.n)} ${round(x.l.v, 2)} ${esc(x.m.u)} · ${stInfo[x.st][0]}</span>`).join(' ') + (fattyLiver() ? ' <span class="chip warn">Gan nhiễm mỡ</span>' : '');
+  const rc = H.recheck ? Math.ceil((new Date(H.recheck + 'T12:00').getTime() - Date.now()) / DAY) : null;
+  return `<h2>Sức khoẻ</h2><a class="card" href="#/health" style="display:block"><div class="sub">Theo hồ sơ khám gần nhất</div><div class="mt">${chips || '<span class="chip good">Các chỉ số trong giới hạn</span>'}</div>${rc !== null && rc <= 14 ? `<div class="hint">📅 ${rc < 0 ? 'Đã quá hạn tái khám ' + (-rc) + ' ngày' : 'Tái khám sau ' + rc + ' ngày'}</div>` : ''}<div class="sub mt">Chạm để xem gợi ý cho tập và ăn.</div></a>`;
+}
+let docs = [];
+async function loadDocs() {
+  const box = $('#docs'); if (!box) return;
+  try { docs = ((await idbDo('readonly', s => s.getAll())) || []).filter(p => p.kind === 'doc').sort((a, b) => b.date - a.date); } catch (e) { box.innerHTML = '<div class="empty">Trình duyệt này không cho lưu tài liệu.</div>'; return; }
+  docs.forEach(p => p.url = URL.createObjectURL(p.blob));
+  box.innerHTML = docs.length ? docs.map(p => `<div class="item"><div class="sp"><b>${esc(p.label)}</b><div class="sub">${fmtD(p.date)} · ${p.blob.type === 'application/pdf' ? 'PDF' : 'Ảnh'}</div></div><button class="btn sm" data-a="docView" data-id="${p.id}">Xem</button><button class="x" data-a="docDel" data-id="${p.id}" aria-label="Xoá">✕</button></div>`).join('') : '<div class="empty">Chưa có tài liệu nào.</div>';
+}
+function vHealth() {
+  const H = S.health, fl = hFlags(), uric = uricHigh(), fat = fattyLiver(), w = lastWeight();
+  const lastDate = H.records.length ? Math.max(...H.records.map(r => r.date)) : 0;
+  const ul = hLatest('uric'), tgl = hLatest('tg'), alt = hLatest('alt'), ast = hLatest('ast'), ggt = hLatest('ggt');
+  const advice = [];
+  if (uric) advice.push(`<div class="ins warn"><b>⚠️ Acid uric cao: ${round(ul.v, 2)} mg/dL (≈ ${Math.round(ul.v * 59.48)} µmol/L, ngưỡng 3,4–7,0)</b>
+    <ul class="sub" style="margin:6px 0 0;padding-left:18px"><li><b>Uống nước:</b> khoảng 2–2,5 lít/ngày, chia đều, nhất là quanh buổi tập (trừ khi bác sĩ hạn chế).</li>
+    <li><b>Hạn chế:</b> bia, rượu; nước ngọt, nước mía, nước ép nhiều đường; nội tạng, hải sản (tôm, cua, sò, mực), cá cơm, cá mòi; nước hầm xương và lẩu đậm; thịt đỏ nhiều.</li>
+    <li><b>Ưu tiên:</b> rau, sữa và sữa chua ít béo, trứng, đậu hũ, ngũ cốc nguyên hạt; thịt gà hoặc heo nạc với lượng vừa.</li>
+    <li><b>Giảm cân từ từ:</b> nhịn ăn hoặc giảm cân quá nhanh có thể làm acid uric tăng tạm thời.</li>
+    <li><b>Khi tập:</b> tránh để mất nước, không tập đến kiệt sức. Nếu khớp đột ngột sưng, đỏ, nóng, đau (nghi cơn gout), nghỉ tập khớp đó và đi khám.</li>
+    <li><b>Theo dõi:</b> hỏi bác sĩ về thời điểm xét nghiệm lại và có cần dùng thuốc hay không.</li></ul></div>`);
+  if (fat) advice.push(`<div class="ins warn"><b>⚠️ Gan nhiễm mỡ độ I (siêu âm)</b>
+    <ul class="sub" style="margin:6px 0 0;padding-left:18px"><li><b>Cân nặng:</b> giảm khoảng 5–10% (${round(w * .05, 1)}–${round(w * .1, 1)} kg từ ${round(w, 1)} kg) trong vài tháng thường cải thiện rõ. Ăn đúng và tập đều là hướng chính.</li>
+    <li><b>Ăn:</b> giảm đường, nước ngọt, bánh kẹo, đồ chiên rán; hạn chế rượu bia, tốt nhất là tránh.</li>
+    <li><b>Tập:</b> kết hợp tạ và cardio vừa sức, tổng khoảng 150 phút/tuần trở lên đều có lợi.</li>
+    <li><b>Men gan hiện tại:</b> ${[alt && `ALT ${round(alt.v, 1)}`, ast && `AST ${round(ast.v, 1)}`, ggt && `GGT ${round(ggt.v, 1)}`].filter(Boolean).join(', ') || 'chưa có dữ liệu'}${alt && ast && ggt ? ' (đều trong giới hạn theo phiếu).' : '.'}</li>
+    <li><b>Theo dõi:</b> tái khám siêu âm và men gan theo hẹn của bác sĩ.</li></ul></div>`);
+  if (tgl && hStatus(mkOf('tg'), tgl.v) === 'N') advice.push(`<div class="ins"><b>💡 Triglyceride ${round(tgl.v, 2)} mmol/L</b><div class="sub">Nằm trong giới hạn của phiếu nhưng cao hơn mức lý tưởng thường dùng (dưới 1,7). Giảm đường, rượu bia, đồ chiên và tăng cardio sẽ giúp, đặc biệt khi có gan nhiễm mỡ.</div></div>`);
+  const others = fl.filter(x => !['uric'].includes(x.m.k) && !(x.m.k === 'tg' && x.st === 'N'));
+  others.forEach(x => advice.push(`<div class="ins warn"><b>⚠️ ${esc(x.m.n)} ${round(x.l.v, 2)} ${esc(x.m.u)} (${stInfo[x.st][0].toLowerCase()}, tham chiếu ${refTxt(x.m)})</b><div class="sub">Hãy trao đổi với bác sĩ về chỉ số này.</div></div>`));
+  const groups = [...new Set(MARKERS.map(m => m.g))];
+  const table = groups.map(g => {
+    const rows = MARKERS.filter(m => m.g === g && hLatest(m.k)).map(m => {
+      const l = hLatest(m.k), st = hStatus(m, l.v), [tx, cl] = stInfo[st];
+      return `<div class="item" style="padding:9px 0"><div class="sp"><b>${esc(m.n)}</b><div class="sub">Tham chiếu ${refTxt(m)} ${esc(m.u)} · ${fmtD(l.date)}${l.prev ? ` · trước: ${round(l.prev.v, 2)} (${fmtD(l.prev.date)})` : ''}</div></div><div style="text-align:right"><b>${round(l.v, 2)}</b> <span class="sub">${esc(m.u)}</span><div><span class="chip ${cl}">${tx}</span></div></div><button class="x" data-a="hDel" data-k="${m.k}" data-r="${l.rid}" aria-label="Xoá">✕</button></div>`;
+    }).join('');
+    return rows ? `<h2>${g}</h2><div class="card" style="padding:4px 16px">${rows}</div>` : '';
+  }).join('');
+  const withHist = MARKERS.filter(m => S.health.records.filter(r => r.v && r.v[m.k] != null).length >= 2);
+  const hm = window.__hm && withHist.find(m => m.k === window.__hm) ? window.__hm : (withHist[0] && withHist[0].k);
+  const trend = withHist.length ? `<h2>Xu hướng theo thời gian</h2><div class="card"><select data-in="hMarker">${withHist.map(m => `<option value="${m.k}" ${m.k === hm ? 'selected' : ''}>${esc(m.n)}</option>`).join('')}</select><div class="mt">${lineChart(S.health.records.filter(r => r.v && r.v[hm] != null).sort((a, b) => a.date - b.date).map(r => ({ x: fmtD(r.date), y: r.v[hm] })))}</div></div>` : '';
+  const img = [...H.imaging].sort((a, b) => b.date - a.date).map(i => `<div class="item"><div class="sp"><b>${esc(i.title)}</b> <span class="sub">${fmtD(i.date)}</span><div class="sub">${esc(i.conclusion)}</div></div><button class="x" data-a="iDel" data-id="${i.id}" aria-label="Xoá">✕</button></div>`).join('');
+  const notes = H.notes.map(n => `<div class="item"><div class="sp">${esc(n.text)}<div class="sub">${fmtD(n.date)}</div></div><button class="x" data-a="nDel" data-id="${n.id}" aria-label="Xoá">✕</button></div>`).join('');
+  const opts = groups.map(g => `<optgroup label="${g}">${MARKERS.filter(m => m.g === g).map(m => `<option value="${m.k}">${esc(m.n)} (${esc(m.u)})</option>`).join('')}</optgroup>`).join('');
+  return `${head('Sức khoẻ', '#/profile')}<div class="sub">${lastDate ? 'Đợt khám gần nhất: ' + new Date(lastDate).toLocaleDateString('vi-VN') : 'Chưa có dữ liệu. Nhập từ file hoặc thêm từng chỉ số bên dưới.'}</div>
+  ${advice.length ? `<h2>Cần chú ý và gợi ý cho tập, ăn</h2>${advice.join('')}` : H.records.length ? '<div class="ins good"><b>✅ Các chỉ số đang trong giới hạn</b></div>' : ''}
+  ${table}${trend}
+  <h2>Siêu âm, kết quả khác</h2><div class="card">${img || '<div class="empty">Chưa có kết quả nào.</div>'}<label>Thêm kết quả</label><input id="i-title" placeholder="Tên, ví dụ: Siêu âm ổ bụng"><input id="i-date" type="date" class="mt" value="${dk()}"><input id="i-text" class="mt" placeholder="Kết luận của bác sĩ"><button class="btn block mt" data-a="iAdd">Lưu kết quả</button></div>
+  <h2>Bác sĩ dặn</h2><div class="card">${notes || '<div class="empty">Chưa có dặn dò nào. Lời dặn sẽ hiện ở đầu mỗi buổi tập.</div>'}<input id="n-text" class="mt" placeholder="Ví dụ: tránh nín thở khi gắng sức"><button class="btn block mt" data-a="nAdd">Thêm lời dặn</button>
+  <label>Ngày tái khám dự kiến</label><input type="date" data-in="hRecheck" value="${esc(H.recheck || '')}"></div>
+  <h2>Thêm chỉ số</h2><div class="card"><label>Ngày xét nghiệm</label><input id="h-date" type="date" value="${dk()}"><label>Chỉ số</label><select id="h-m">${opts}</select><label>Giá trị</label><input id="h-v" inputmode="decimal" placeholder="Nhập số"><button class="btn pri block mt" data-a="hAdd">Lưu chỉ số</button></div>
+  <h2>Tài liệu (ảnh, PDF)</h2><div class="card"><div id="docs"><div class="empty">Đang tải...</div></div><label>Thêm tài liệu</label><input id="d-title" placeholder="Tên, ví dụ: Xét nghiệm máu 21/09/2026"><label class="btn block mt" style="margin:12px 0 0">📎 Chọn ảnh hoặc PDF<input type="file" accept="image/*,application/pdf" data-in="hdoc" hidden></label><div class="sub mt">Tài liệu chỉ lưu trên máy này, không đồng bộ qua GitHub (nặng và nhạy cảm). Các chỉ số và ghi chú ở trên thì được đồng bộ.</div></div>
+  <h2>Nhập từ file</h2><div class="card"><label class="btn block" style="margin:0">📥 Nhập file sức khoẻ (.json)<input type="file" accept="application/json" data-in="himport" hidden></label></div>
+  <div class="sub mt">Thông tin chỉ mang tính tham khảo, không thay thế chẩn đoán hay tư vấn của bác sĩ. Khoảng tham chiếu lấy từ phiếu của phòng khám nếu có, hoặc giá trị phổ biến.</div>`;
+}
+
 /* ---------- Thư viện bài ---------- */
 function vExercises() {
   const groups = {}; allEx().forEach(e => (groups[e.g] = groups[e.g] || []).push(e));
@@ -570,7 +660,7 @@ function vExercises() {
 function vProfile() {
   const p = S.profile, t = targets(), hasDemo = S.sessions.some(s => s.demo);
   const f = (lb, path, extra = '') => `<div><label>${lb}</label><input data-in="pf" data-f="${path}" inputmode="decimal" value="${esc(p[path] || '')}" ${extra}></div>`;
-  return `${head('Hồ sơ & mục tiêu')}<div class="card"><label>Tên</label><input data-in="pf" data-f="name" data-s="1" value="${esc(p.name)}">
+  return `${head('Hồ sơ & mục tiêu')}<a class="btn block" href="#/health">🩺 Hồ sơ sức khoẻ (khám, xét nghiệm)</a><div class="card"><label>Tên</label><input data-in="pf" data-f="name" data-s="1" value="${esc(p.name)}">
   <div class="grid2"><div><label>Giới tính</label><select data-in="pf" data-f="sex" data-s="1"><option value="m" ${p.sex === 'm' ? 'selected' : ''}>Nam</option><option value="f" ${p.sex === 'f' ? 'selected' : ''}>Nữ</option></select></div>${f('Tuổi', 'age')}</div>
   <div class="grid3">${f('Cao (cm)', 'height')}${f('Nặng (kg)', 'weight')}${f('Mục tiêu (kg)', 'goalWeight')}</div>
   <label>Mục tiêu chính</label><select data-in="pf" data-f="goal" data-s="1"><option value="recomp" ${p.goal === 'recomp' ? 'selected' : ''}>Giảm mỡ và tăng cơ (recomp)</option><option value="giam-mo" ${p.goal === 'giam-mo' ? 'selected' : ''}>Giảm mỡ</option><option value="tang-co" ${p.goal === 'tang-co' ? 'selected' : ''}>Tăng cơ</option></select>
@@ -612,9 +702,9 @@ function render() {
     case '': html = vHome(); break; case 'train': html = vTrain(); break; case 'workout': html = vWorkout(); break;
     case 'routine': html = vRoutine(b); break; case 'cardio': html = vCardio(); break; case 'body': html = vBody(); break;
     case 'food': html = vFood(); break; case 'progress': html = vProgress(); break; case 'exercises': html = vExercises(); break;
-    case 'profile': html = vProfile(); break; default: html = vHome();
+    case 'profile': html = vProfile(); break; case 'health': html = vHealth(); break; default: html = vHome();
   }
-  if (html !== '') { $('#app').innerHTML = html; window.scrollTo(0, 0); if (a === 'body') loadPhotos(); }
+  if (html !== '') { $('#app').innerHTML = html; window.scrollTo(0, 0); if (a === 'body') loadPhotos(); if (a === 'health') loadDocs(); }
   drawNav(route);
 }
 window.addEventListener('hashchange', render);
@@ -662,7 +752,7 @@ const A = {
     const f = foodSel, gi = $('#fm-g'); let q = gi ? num(gi.value) / f.g : num($('#fm-q').value); if (!f || q <= 0) return toast('Nhập số lượng');
     if (f.w) { S.water[foodDay] = (S.water[foodDay] || 0) + Math.round(q * f.g); save(); closeModal(); toast('Đã cộng ' + Math.round(q * f.g) + ' ml nước'); rerender(); return; }
     const l = (S.food[foodDay] = S.food[foodDay] || []), t = $('#fm-t').value || nowT(), ex = l.find(x => x.n === f.n && !!x.sg === !!f.g && x.t === t);
-    if (ex) { ex.q = round(ex.q + q, 3); if (ex.sg) ex.gr = round(ex.q * ex.sg); } else l.push({ n: f.n, k: f.k, p: f.p, t, q: round(q, 4), ...(f.g ? { sg: f.g, gr: round(q * f.g), ...(f.ml ? { ml: 1 } : {}) } : {}) });
+    if (ex) { ex.q = round(ex.q + q, 3); if (ex.sg) ex.gr = round(ex.q * ex.sg); } else l.push({ n: f.n, k: f.k, p: f.p, t, ...(f.pur ? { pur: 1 } : {}), ...(f.alc ? { alc: 1 } : {}), q: round(q, 4), ...(f.g ? { sg: f.g, gr: round(q * f.g), ...(f.ml ? { ml: 1 } : {}) } : {}) });
     save(); closeModal(); toast('Đã thêm'); rerender();
   },
   addCustomFood() {
@@ -720,6 +810,24 @@ const A = {
   },
   async syNow() { await syncNow(true); rerender(); },
   syOff() { if (confirm('Ngắt đồng bộ trên máy này? Dữ liệu trên máy vẫn giữ nguyên.')) { SY = {}; saveSY(); rerender(); } },
+  hAdd() {
+    const k = $('#h-m').value, v = num($('#h-v').value), dstr = $('#h-date').value; if (!v) return toast('Nhập giá trị');
+    const t = new Date((dstr || dk()) + 'T12:00:00').getTime(), H = S.health; let r = H.records.find(x => dk(x.date) === dk(t));
+    if (!r) { r = { id: uid(), date: t, v: {} }; H.records.push(r); } r.v[k] = v; save(); toast('Đã lưu'); rerender();
+  },
+  hDel(el) { const r = S.health.records.find(x => x.id === el.dataset.r); if (!r || !confirm('Xoá chỉ số này?')) return; delete r.v[el.dataset.k]; if (!Object.keys(r.v).length) S.health.records = S.health.records.filter(x => x !== r); save(); rerender(); },
+  iAdd() {
+    const title = $('#i-title').value.trim(), text = $('#i-text').value.trim(); if (!title || !text) return toast('Nhập tên và kết luận');
+    S.health.imaging.push({ id: uid(), date: new Date(($('#i-date').value || dk()) + 'T12:00:00').getTime(), title, conclusion: text }); save(); rerender();
+  },
+  iDel(el) { S.health.imaging = S.health.imaging.filter(i => i.id !== el.dataset.id); save(); rerender(); },
+  nAdd() { const t = $('#n-text').value.trim(); if (!t) return toast('Nhập lời dặn'); S.health.notes.push({ id: uid(), date: Date.now(), text: t }); save(); rerender(); },
+  nDel(el) { S.health.notes = S.health.notes.filter(n => n.id !== el.dataset.id); save(); rerender(); },
+  docView(el) {
+    const p = docs.find(x => x.id === el.dataset.id); if (!p) return;
+    modal(`<div class="row"><b class="sp">${esc(p.label)}</b><button class="btn sm" data-a="closeModal">Đóng</button></div>${p.blob.type === 'application/pdf' ? `<a class="btn pri block mt" href="${p.url}" target="_blank" rel="noopener">Mở PDF</a>` : `<img src="${p.url}" alt="" style="width:100%;border-radius:12px;margin-top:10px">`}`);
+  },
+  async docDel(el) { if (!confirm('Xoá tài liệu này?')) return; await idbDo('readwrite', s => s.delete(el.dataset.id)); loadDocs(); },
   wipe() { if (confirm('Xoá TOÀN BỘ dữ liệu? Không thể hoàn tác.' + (SY.token ? ' Dữ liệu đồng bộ trên GitHub cũng sẽ bị xoá.' : '')) && confirm('Chắc chắn chứ?')) { S = defaults(); save(); applyTheme(); stopRest(); try { idbDo('readwrite', s => s.clear()); } catch (e) {} rerender(); } },
 };
 document.addEventListener('click', e => {
@@ -742,12 +850,28 @@ function onInput(e, committed) {
   }
   else if (committed && k === 'wstart') { const v = new Date(el.value).getTime(); if (v && v <= Date.now() + 60000 && S.active) { S.active.start = v; save(); } }
   else if (committed && k === 'ftime') { const f = foodOf(foodDay)[+el.dataset.i]; if (f && el.value) { f.t = el.value; save(); } }
+  else if (committed && k === 'hMarker') { window.__hm = el.value; rerender(); }
+  else if (committed && k === 'hRecheck') { S.health.recheck = el.value; save(); }
+  else if (committed && k === 'hdoc') {
+    const fl = el.files[0]; if (!fl) return; const label = ($('#d-title').value || '').trim() || fl.name;
+    (fl.type === 'application/pdf' ? Promise.resolve(fl) : shrink(fl, 1800)).then(blob => idbDo('readwrite', s => s.put({ id: uid(), date: Date.now(), label, kind: 'doc', blob }))).then(() => { toast('Đã lưu tài liệu'); loadDocs(); }).catch(() => toast('Không lưu được tài liệu'));
+  }
+  else if (committed && k === 'himport') {
+    const fl = el.files[0]; if (!fl) return; const r = new FileReader();
+    r.onload = () => { try {
+      const d = JSON.parse(r.result), h = d.health || d, H = S.health; let n = 0;
+      (h.records || []).forEach(x => { const t = typeof x.date === 'number' ? x.date : new Date(x.date + 'T12:00:00').getTime(); let rec = H.records.find(y => dk(y.date) === dk(t)); if (!rec) { rec = { id: uid(), date: t, v: {} }; H.records.push(rec); } Object.assign(rec.v, x.v); n++; });
+      (h.imaging || []).forEach(x => { const t = typeof x.date === 'number' ? x.date : new Date(x.date + 'T12:00:00').getTime(); if (!H.imaging.some(y => dk(y.date) === dk(t) && y.title === x.title)) H.imaging.push({ id: uid(), date: t, title: x.title, conclusion: x.conclusion }); });
+      (h.notes || []).forEach(x => { if (!H.notes.some(y => y.text === x.text)) H.notes.push({ id: uid(), date: Date.now(), text: x.text }); });
+      if (h.recheck) H.recheck = h.recheck; save(); toast('Đã nhập hồ sơ sức khoẻ'); rerender();
+    } catch (e) { toast('File không hợp lệ'); } }; r.readAsText(fl);
+  }
   else if (committed && k === 'rmTime') { if (el.value) { S.remind.time = el.value; save(); schedNotif(); } }
   else if (committed && k === 'dlEvery') { S.deload.every = Math.max(2, Math.round(num(el.value)) || 6); save(); rerender(); }
   else if (committed && k === 'progEx') { progEx = el.value; rerender(); }
   else if (committed && k === 'import') {
     const fl = el.files[0]; if (!fl) return; const r = new FileReader();
-    r.onload = () => { try { const d = JSON.parse(r.result); if (!d.profile || !d.sessions) throw 0; S = { ...defaults(), ...d }; save(); applyTheme(); toast('Đã nhập dữ liệu'); rerender(); } catch (x) { toast('File không hợp lệ'); } }; r.readAsText(fl);
+    r.onload = () => { try { const d = JSON.parse(r.result); if (!d.profile || !d.sessions) throw 0; S = { ...defaults(), ...d, health: { ...defaults().health, ...d.health } }; save(); applyTheme(); toast('Đã nhập dữ liệu'); rerender(); } catch (x) { toast('File không hợp lệ'); } }; r.readAsText(fl);
   }
 }
 document.addEventListener('input', e => onInput(e, false));
@@ -782,7 +906,7 @@ async function syncNow(manual) {
       if (lu > (SY.last || 0) && !confirm('Cả hai máy đều có thay đổi mới.\n\nOK = dùng dữ liệu từ GitHub (bỏ thay đổi trên máy này)\nHuỷ = giữ dữ liệu máy này và ghi đè GitHub')) push = true; else pull = true;
     } else if (!remote || lu > ru) push = true;
     if (pull) {
-      const act = S.active; S = { ...defaults(), ...remote, profile: { ...defaults().profile, ...remote.profile }, remind: { ...defaults().remind, ...remote.remind }, deload: { ...defaults().deload, ...remote.deload }, active: act };
+      const act = S.active; S = { ...defaults(), ...remote, profile: { ...defaults().profile, ...remote.profile }, remind: { ...defaults().remind, ...remote.remind }, deload: { ...defaults().deload, ...remote.deload }, health: { ...defaults().health, ...remote.health }, active: act };
       try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} applyTheme(); SY.msg = 'Đã tải dữ liệu mới từ GitHub';
       if (!/^#\/(workout|routine)/.test(location.hash) && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '')) render();
     } else if (push) {

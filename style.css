@@ -56,3 +56,4 @@ textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var
 .tin{width:auto;padding:3px 6px;font-size:12px;margin-top:4px;border-radius:8px}
 .ins{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:14px;padding:12px;margin:8px 0}
 .ins.warn{border-left-color:#F59E0B}.ins.good{border-left-color:var(--ok)}.ins .sub{margin-top:3px;color:var(--ink);opacity:.8}
+.chip.warn{background:color-mix(in srgb,#F59E0B 28%,var(--card))}.chip.good{background:color-mix(in srgb,#2FA84F 22%,var(--card))}.chip.info{background:color-mix(in srgb,#EAB308 22%,var(--card))}
