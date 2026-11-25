@@ -267,7 +267,7 @@ function vRoutine(id) {
 }
 function openPicker(cb) { pickCb = cb; pickQ = ''; drawPicker(); }
 function drawPicker() {
-  const q = pickQ.toLowerCase(), list = allEx().filter(e => !q || (e.name + e.g).toLowerCase().includes(q));
+  const q = fold(pickQ), list = allEx().filter(e => !q || fold(e.name + e.g).includes(q));
   modal(`<div class="row"><h3 class="sp">Chọn bài tập</h3><button class="btn sm" data-a="closeModal">Đóng</button></div><input id="pq" class="mt" placeholder="Tìm bài hoặc nhóm cơ..." value="${esc(pickQ)}" data-in="pq">
   <div id="plist">${pickList(list)}</div>`);
 }
@@ -316,23 +316,24 @@ function vBodyPhotos() {
 }
 
 /* ---------- Ăn uống ---------- */
+const fold = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
 const foodPool = () => [...S.customFoods.map(f => ({ ...f, mine: 1 })), ...FOODS];
 let foodSel = null;
 function openFood(name) {
   const f = foodPool().find(x => x.n === name); if (!f) return; foodSel = f;
   modal(`<h3>${esc(f.n)}</h3><div class="sub">${f.g ? `${round(f.k / f.g * 100)} kcal · ${round(f.p / f.g * 100, 1)}g đạm mỗi 100g (1 khẩu phần ≈ ${f.g}g)` : `${f.k} kcal · ${f.p}g đạm mỗi khẩu phần`}</div>
-  <div class="grid2"><div><label>Số khẩu phần</label><input id="fm-q" inputmode="decimal" data-in="fm" data-f="q" value="1"></div>${f.g ? `<div><label>Hoặc nhập gam</label><input id="fm-g" inputmode="decimal" data-in="fm" data-f="g" value="${f.g}"></div>` : ''}</div>
+  ${f.w ? '<div class="sub">Không có calo, được cộng vào mục nước uống.</div>' : ''}<div class="grid2"><div><label>${f.w ? 'Số ly' : 'Số khẩu phần'}</label><input id="fm-q" inputmode="decimal" data-in="fm" data-f="q" value="1"></div>${f.g ? `<div><label>${f.w ? 'Hoặc nhập ml' : 'Hoặc nhập gam'}</label><input id="fm-g" inputmode="decimal" data-in="fm" data-f="g" value="${f.g}"></div>` : ''}</div>
   <div class="stat mt" id="fm-pre"></div><button class="btn pri block mt" data-a="foodAdd">Thêm vào ${dayLabel(foodDay).toLowerCase()}</button><button class="btn ghost block" data-a="closeModal">Đóng</button>`);
   fmUpdate('q');
 }
 function fmUpdate(src) {
   const f = foodSel, q = $('#fm-q'), g = $('#fm-g'); if (!f) return;
   if (g && src === 'q') g.value = round(num(q.value) * f.g); else if (g && src === 'g') q.value = round(num(g.value) / f.g, 2);
-  const m = num(q.value); $('#fm-pre').innerHTML = `<b>${Math.round(f.k * m)} kcal</b><span> · ${round(f.p * m, 1)}g đạm</span>`;
+  const m = num(q.value); $('#fm-pre').innerHTML = f.w ? `<b>${round(f.g * m)} ml nước</b>` : `<b>${Math.round(f.k * m)} kcal</b><span> · ${round(f.p * m, 1)}g đạm</span>`;
 }
 function vFood() {
   const t = targets(), tot = foodTotal(foodDay), items = foodOf(foodDay), wt = S.water[foodDay] || 0, isToday = foodDay === dk();
-  const q = foodQ.toLowerCase(), all = foodPool().filter(f => !q || f.n.toLowerCase().includes(q));
+  const q = fold(foodQ), all = foodPool().filter(f => !q || fold(f.n).includes(q));
   const shown = (q ? all : all.slice(0, 14)).map(f => `<button class="btn sm" data-a="addFood" data-n="${esc(f.n)}" style="margin:3px 3px 0 0">${f.mine ? '⭐ ' : ''}${esc(f.n)} · ${f.k}</button>`).join('');
   return `${head('Ăn uống')}<div class="row"><button class="btn sm" data-a="dayPrev">‹</button><b class="sp" style="text-align:center">${dayLabel(foodDay)}</b><button class="btn sm" data-a="dayNext" ${isToday ? 'disabled style="opacity:.4"' : ''}>›</button></div>
   <div class="card"><div class="row"><b style="font-size:24px">${Math.round(tot.k)}</b><span class="sub">/ ${t.kcal} kcal</span><span class="sp"></span><span class="sub">còn ${Math.max(0, Math.round(t.kcal - tot.k))}</span></div>
@@ -459,6 +460,7 @@ const A = {
   },
   foodAdd() {
     const f = foodSel, q = num($('#fm-q').value); if (!f || q <= 0) return toast('Nhập số lượng');
+    if (f.w) { S.water[foodDay] = (S.water[foodDay] || 0) + Math.round(q * f.g); save(); closeModal(); toast('Đã cộng ' + Math.round(q * f.g) + ' ml nước'); rerender(); return; }
     const l = (S.food[foodDay] = S.food[foodDay] || []), ex = l.find(x => x.n === f.n && !!x.sg === !!f.g);
     if (ex) { ex.q = round(ex.q + q, 3); if (ex.sg) ex.gr = round(ex.q * ex.sg); } else l.push({ n: f.n, k: f.k, p: f.p, q: round(q, 3), ...(f.g ? { sg: f.g, gr: round(q * f.g) } : {}) });
     save(); closeModal(); toast('Đã thêm'); rerender();
@@ -525,8 +527,8 @@ function onInput(e, committed) {
   else if (k === 'ws') { const s = S.active.exs[+el.dataset.i].sets[+el.dataset.j]; s[el.dataset.f] = el.value; save(); }
   else if (k === 'fm') fmUpdate(el.dataset.f);
   else if (k === 'rt') { curRoutine()[el.dataset.f] = el.value; save(); }
-  else if (k === 'pq') { pickQ = el.value; $('#plist').innerHTML = pickList(allEx().filter(x => !pickQ || (x.name + x.g).toLowerCase().includes(pickQ.toLowerCase()))); }
-  else if (k === 'fq') { foodQ = el.value; const q = foodQ.toLowerCase(), all = foodPool().filter(f => !q || f.n.toLowerCase().includes(q)); $('#flist').innerHTML = (q ? all : all.slice(0, 14)).map(f => `<button class="btn sm" data-a="addFood" data-n="${esc(f.n)}" style="margin:3px 3px 0 0">${f.mine ? '⭐ ' : ''}${esc(f.n)} · ${f.k}</button>`).join('') || '<span class="sub">Không có, hãy thêm món riêng bên dưới.</span>'; }
+  else if (k === 'pq') { pickQ = el.value; $('#plist').innerHTML = pickList(allEx().filter(x => !pickQ || fold(x.name + x.g).includes(fold(pickQ)))); }
+  else if (k === 'fq') { foodQ = el.value; const q = fold(foodQ), all = foodPool().filter(f => !q || fold(f.n).includes(q)); $('#flist').innerHTML = (q ? all : all.slice(0, 14)).map(f => `<button class="btn sm" data-a="addFood" data-n="${esc(f.n)}" style="margin:3px 3px 0 0">${f.mine ? '⭐ ' : ''}${esc(f.n)} · ${f.k}</button>`).join('') || '<span class="sub">Không có, hãy thêm món riêng bên dưới.</span>'; }
   else if (committed && k === 'pf') { const f = el.dataset.f; S.profile[f] = el.dataset.s ? el.value : num(el.value); S.profile.weight = S.profile.weight || 70; save(); rerender(); }
   else if (committed && k === 'photo') {
     const fl = el.files[0]; if (!fl) return; const label = $('#ph-label').value;
