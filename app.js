@@ -22,7 +22,7 @@ const defaults = () => ({
   profile: { name: '', sex: 'm', age: 30, height: 170, weight: 70, goalWeight: 0, goal: 'recomp', activity: 1.375, weeklyGoal: 3, rest: 90, accent: '#B7E21E', mode: 'auto' },
   remind: { on: false, days: [1, 3, 5], time: '18:00' }, deload: { on: false, start: 0, last: 0, every: 6 }, customFoods: [],
   routines: JSON.parse(JSON.stringify(DEFAULT_ROUTINES)), customEx: [],
-  sessions: [], cardio: [], body: [], food: {}, water: {}, active: null, updated: 0, health: { records: [], imaging: [], notes: [], recheck: '' },
+  sessions: [], cardio: [], body: [], food: {}, water: {}, active: null, updated: 0, health: { records: [], imaging: [], notes: [], recheck: '' }, reportSeen: '',
 });
 let S = load();
 function load() {
@@ -122,7 +122,7 @@ const head = (t, back) => `<div class="head">${back ? `<a class="back" href="${b
 const NAV = [['#/', 'Home', '🏠', 'Trang chủ'], ['#/train', 'train', '🏋️', 'Tập'], ['#/food', 'food', '🍚', 'Ăn uống'], ['#/progress', 'progress', '📈', 'Tiến độ'], ['#/profile', 'profile', '👤', 'Hồ sơ']];
 function drawNav(route) {
   const key = route.split('/')[1] || 'Home';
-  const map = { workout: 'train', routine: 'train', cardio: 'train', exercises: 'train', body: 'progress', health: 'profile' };
+  const map = { workout: 'train', routine: 'train', cardio: 'train', exercises: 'train', body: 'progress', health: 'profile', report: 'progress' };
   const cur = map[key] || key;
   $('#nav').innerHTML = NAV.map(([h, k, ic, lb]) => `<a href="${h}" class="${cur === k ? 'on' : ''}"><span class="ic">${ic}</span>${lb}</a>`).join('');
 }
@@ -149,7 +149,7 @@ function vHome() {
     <div class="row mt"><button class="btn" data-a="start" data-id="${nx.id}">Bắt đầu</button><a class="btn" href="#/train" style="background:transparent;color:var(--acc-ink);border:1px solid var(--acc-ink)">Chọn buổi khác</a></div></div>`;
   }
   return `<div class="sub">${hi}${p.name ? ', ' + esc(p.name) : ''}</div><h1>Hôm nay</h1>${top}
-  ${healthCard()}${todayCard()}
+  ${reportBanner()}${healthCard()}${todayCard()}
   <h2>Tuần này</h2><div class="card"><div class="row"><div class="dots">${dots}</div><span class="sp"></span><b>${w.sessions}/${p.weeklyGoal} buổi tạ</b></div>
   <div class="sub mt">Chạy/cardio: ${round(w.km, 1)} km · ${Math.round(w.cardioMin)} phút · Chuỗi tuần đạt mục tiêu: ${weekStreak()} 🔥</div></div>
   <h2>Dinh dưỡng hôm nay</h2><a class="card" href="#/food" style="display:block"><div class="row"><b>${Math.round(ft.k)}</b><span class="sub">/ ${t.kcal} kcal</span><span class="sp"></span><b>${Math.round(ft.p)}</b><span class="sub">/ ${t.protein}g đạm</span></div>
@@ -385,7 +385,7 @@ function vProgress() {
     lift = `<select data-in="progEx">${used.map(id => `<option value="${id}" ${id === progEx ? 'selected' : ''}>${esc(exOf(id).name)}</option>`).join('')}</select><div class="sub mt">${ex.type === 'time' ? 'Thời gian tốt nhất mỗi buổi (giây)' : 'Sức mạnh ước tính (1RM) mỗi buổi, kg'}</div>${lineChart(pts)}`;
   } else lift = '<div class="empty">Hoàn thành vài buổi tập để xem tiến bộ từng bài.</div>';
   return `${head('Tiến độ')}<div class="grid3"><div class="stat"><b>${t}</b><span>Buổi tạ</span></div><div class="stat"><b>${round(tv / 1000, 1)}t</b><span>Tổng tạ</span></div><div class="stat"><b>${round(km, 1)}</b><span>Km đã chạy</span></div></div>
-  <div class="grid2 mt"><a class="btn" href="#/body">⚖️ Cân nặng & số đo</a><a class="btn" href="#/cardio">🏃 Cardio</a></div><a class="btn block mt" href="#/health">🩺 Hồ sơ sức khoẻ</a>
+  <div class="grid2 mt"><a class="btn" href="#/body">⚖️ Cân nặng & số đo</a><a class="btn" href="#/cardio">🏃 Cardio</a></div><div class="grid2 mt"><a class="btn" href="#/report">📊 Báo cáo tuần</a><a class="btn" href="#/health">🩺 Sức khoẻ</a></div>
   ${vInsights()}
   <h2>Số buổi tạ mỗi tuần</h2><div class="card">${barChart(cnt)}</div><h2>Khối lượng tạ mỗi tuần (tấn)</h2><div class="card">${barChart(vol)}</div><h2>Tiến bộ theo bài</h2><div class="card">${lift}</div>${vTiming()}`;
 }
@@ -649,6 +649,113 @@ function vHealth() {
   <div class="sub mt">Thông tin chỉ mang tính tham khảo, không thay thế chẩn đoán hay tư vấn của bác sĩ. Khoảng tham chiếu lấy từ phiếu của phòng khám nếu có, hoặc giá trị phổ biến.</div>`;
 }
 
+/* ---------- Báo cáo tuần ---------- */
+function weekHasData(ws) {
+  const we = ws + 7 * DAY, inW = t => t >= ws && t < we;
+  return S.sessions.some(x => inW(x.date)) || S.cardio.some(x => inW(x.date)) || S.body.some(x => inW(x.date)) || Array.from({ length: 7 }, (_, i) => dk(ws + i * DAY)).some(k => foodOf(k).length);
+}
+function reportBanner() {
+  const last = weekStart(Date.now()) - 7 * DAY;
+  if (!weekHasData(last) || (S.reportSeen || '') >= dk(last)) return '';
+  return `<div class="banner row"><div class="sp"><b>📊 Báo cáo tuần ${fmtD(last)} – ${fmtD(last + 6 * DAY)} đã sẵn sàng</b><div class="sub">Tóm tắt tập, ăn uống, cơ thể và sức khoẻ.</div></div><a class="btn pri sm" href="#/report">Xem</a></div>`;
+}
+const pctCh = (a, b) => b > 0 ? (a >= b ? '▲ ' : '▼ ') + Math.abs(Math.round((a / b - 1) * 100)) + '%' : '';
+function reportData(ws) {
+  const now = Date.now(), we = ws + 7 * DAY, pws = ws - 7 * DAY, T = targets(), P = S.profile, inW = (t, a = ws, b = we) => t >= a && t < b;
+  const D = { ws, we, T, P, partial: we > now };
+  const ss = S.sessions.filter(x => inW(x.date)), ps = S.sessions.filter(x => inW(x.date, pws, ws)), sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
+  D.ss = ss; D.vol = sum(ss, x => x.vol); D.pvol = sum(ps, x => x.vol); D.sets = sum(ss, x => x.exs.reduce((u, e) => u + e.sets.length, 0)); D.dur = ss.length ? sum(ss, x => x.dur) / ss.length / 60 : 0;
+  const fe = ss.filter(x => x.feel); D.feel = fe.length ? sum(fe, x => x.feel) / fe.length : 0;
+  D.prs = []; ss.forEach(x => x.exs.forEach(e => { const ex = exOf(e.id); if (ex.type === 'time' || D.prs.some(p => p.id === e.id)) return;
+    const prior = S.sessions.filter(y => y.date < ws).flatMap(y => y.exs.filter(z => z.id === e.id).flatMap(z => z.sets)); if (!prior.length) return;
+    const best = Math.max(...prior.map(z => e1rm(z.w, z.r))), cur = Math.max(...e.sets.map(z => e1rm(z.w, z.r))); if (cur > best + 0.01) D.prs.push({ id: e.id, pct: (cur / best - 1) * 100 }); }));
+  const gs = {}; Object.keys(GROUPS).forEach(g => gs[g] = 0); ss.forEach(x => x.exs.forEach(e => { const g = exOf(e.id).g; if (g in gs) gs[g] += e.sets.length; }));
+  D.low = ss.length >= 2 ? Object.keys(GROUPS).filter(g => gs[g] < GROUPS[g] * 0.6) : [];
+  const cs = S.cardio.filter(x => inW(x.date)), pcs = S.cardio.filter(x => inW(x.date, pws, ws));
+  D.km = sum(cs, x => x.km || 0); D.pkm = sum(pcs, x => x.km || 0); D.cmin = sum(cs, x => x.min); D.cn = cs.length;
+  const days = Array.from({ length: 7 }, (_, i) => ws + i * DAY), pdays = days.map(t => t - 7 * DAY);
+  D.days = days.map(t => { const k = dk(t); return { t, k, train: S.sessions.some(x => dk(x.date) === k), food: foodOf(k).length > 0, water: (S.water[k] || 0) > 0, weigh: S.body.some(b => dk(b.date) === k && b.weight), future: t > now, kc: foodTotal(k).k, pr: foodTotal(k).p, w: S.water[k] || 0 }; });
+  const valid = D.days.filter(d => d.kc >= 800), pvalid = pdays.map(t => foodTotal(dk(t))).filter(f => f.k >= 800);
+  D.logged = D.days.filter(d => d.food).length; D.valid = valid.length;
+  D.ak = valid.length ? avgOf(valid.map(d => d.kc)) : 0; D.ap = valid.length ? avgOf(valid.map(d => d.pr)) : 0; D.pak = pvalid.length ? avgOf(pvalid.map(f => f.k)) : 0;
+  D.kHit = valid.length ? valid.filter(d => Math.abs(d.kc - T.kcal) / T.kcal <= .1).length / valid.length : null;
+  D.pHit = valid.length ? valid.filter(d => d.pr >= T.protein * .9).length / valid.length : null;
+  const wd = D.days.filter(d => d.w > 0); D.aw = wd.length ? avgOf(wd.map(d => d.w)) : 0; D.wDays = wd.length;
+  const ents = D.days.flatMap(d => foodOf(d.k)); D.badFoods = ents.filter(f => f.pur || f.alc);
+  const bw = S.body.filter(b => b.weight && inW(b.date)).sort((a, b) => a.date - b.date), pbw = S.body.filter(b => b.weight && inW(b.date, pws, ws));
+  D.bw = bw; D.wavg = bw.length ? avgOf(bw.map(b => b.weight)) : 0; D.pwavg = pbw.length ? avgOf(pbw.map(b => b.weight)) : 0;
+  const wa = S.body.filter(b => b.waist && b.date < we).sort((a, b) => a.date - b.date); D.waist = wa.length ? wa[wa.length - 1] : null; D.pwaist = wa.filter(b => b.date < ws).pop() || null;
+  // điểm tuần
+  const comp = [{ n: 'Tập luyện', w: 40, v: Math.min(1, ss.length / P.weeklyGoal) }];
+  if (D.kHit !== null && D.valid >= 3) comp.push({ n: 'Calo đúng mục tiêu', w: 25, v: D.kHit }, { n: 'Đủ đạm', w: 20, v: D.pHit });
+  if (D.wDays >= 3) comp.push({ n: 'Uống đủ nước', w: 15, v: Math.min(1, D.aw / T.water) });
+  D.comp = comp; D.score = comp.length >= 2 ? Math.round(sum(comp, c => c.w * c.v) / sum(comp, c => c.w) * 100) : null;
+  // nổi bật, cần cải thiện, ưu tiên tuần tới
+  const good = [], bad = [], next = [];
+  if (ss.length >= P.weeklyGoal) good.push(`Đạt mục tiêu ${P.weeklyGoal} buổi tạ (${ss.length} buổi).`);
+  if (D.prs.length) good.push(`${D.prs.length} kỷ lục sức mạnh mới: ${D.prs.slice(0, 3).map(p => exOf(p.id).name.replace(/ \(.*/, '') + ' +' + round(p.pct, 1) + '%').join(', ')}.`);
+  if (D.kHit !== null && D.kHit >= .7) good.push(`Calo sát mục tiêu ở ${Math.round(D.kHit * 100)}% số ngày ghi đủ.`);
+  if (D.pHit !== null && D.pHit >= .7) good.push(`Đủ đạm ở ${Math.round(D.pHit * 100)}% số ngày.`);
+  if (D.pvol > 0 && D.vol > D.pvol * 1.05) good.push(`Khối lượng tạ tăng ${Math.round((D.vol / D.pvol - 1) * 100)}% so với tuần trước.`);
+  if (ss.length < P.weeklyGoal) { bad.push(`Mới ${ss.length}/${P.weeklyGoal} buổi tạ.`); const nx = nextRoutine(); next.push(`Tập đủ ${P.weeklyGoal} buổi${nx ? `, bắt đầu bằng buổi "${nx.name}"` : ''}. Đặt giờ cố định trong phần Nhắc lịch tập.`); }
+  if (D.logged < 5 && !D.partial) { bad.push(`Chỉ ghi ăn uống ${D.logged}/7 ngày nên số liệu dinh dưỡng chưa chắc chắn.`); next.push('Ghi ăn uống đủ các ngày (kể cả cuối tuần) để phân tích chính xác hơn.'); }
+  if (D.valid >= 3 && D.ap < T.protein * .9) { bad.push(`Đạm trung bình ${Math.round(D.ap)}g, thấp hơn mục tiêu ${T.protein}g.`); next.push(`Thêm khoảng ${Math.round(T.protein - D.ap)}g đạm mỗi ngày: trứng, sữa chua, ức gà, đậu hũ hoặc whey.`); }
+  if (D.valid >= 3 && Math.abs(D.ak - T.kcal) / T.kcal > .1) { const df = Math.round(D.ak - T.kcal); bad.push(`Calo trung bình ${Math.round(D.ak)} kcal, ${df > 0 ? 'dư' : 'thiếu'} ${Math.abs(df)} so với mục tiêu ${T.kcal}.`); next.push(df > 0 ? `Giảm khoảng ${Math.min(Math.abs(df), 300)} kcal/ngày (bớt đồ ngọt, tinh bột tinh chế, đồ uống có đường).` : `Ăn thêm khoảng ${Math.min(Math.abs(df), 300)} kcal/ngày nếu bạn thấy mệt hoặc tụt sức.`); }
+  if (uricHigh()) {
+    if (D.badFoods.length) { bad.push(`${D.badFoods.length} lần ghi món/đồ uống dễ làm tăng acid uric (${[...new Set(D.badFoods.map(f => f.n.replace(/ \(.*/, '')))].slice(0, 4).join(', ')}).`); next.push('Giảm bia rượu, nước ngọt, hải sản, nội tạng, lẩu vì acid uric của bạn đang cao.'); }
+    if (D.wDays < 3 || D.aw < 2000) next.push('Uống nước khoảng 2–2,5 lít/ngày và ghi nước lọc trong app (acid uric đang cao).');
+  }
+  if (D.bw.length === 0 && !D.partial) next.push('Cân ít nhất 2 lần mỗi tuần, cùng giờ buổi sáng.');
+  if (D.low.length) next.push(`Thêm bài cho ${D.low.slice(0, 3).join(', ')} (đang dưới mức set tối thiểu).`);
+  if (deloadDue()) next.push('Đã tập nhiều tuần liên tục: cân nhắc một tuần nhẹ (Hồ sơ → Tuần nhẹ).');
+  if (S.health.recheck) { const rc = Math.ceil((new Date(S.health.recheck + 'T12:00').getTime() - now) / DAY); if (rc <= 14) next.push(rc < 0 ? `Đã quá hạn tái khám ${-rc} ngày, hãy đặt lịch.` : `Tái khám sau ${rc} ngày, chuẩn bị đặt lịch.`); }
+  if (!next.length) next.push('Duy trì nhịp hiện tại và cố tăng nhẹ tạ ở các bài đã đạt đủ reps.');
+  D.good = good; D.bad = bad; D.next = next.slice(0, 4);
+  return D;
+}
+function reportText(D) {
+  const L = [`FitTrack · Tuần ${fmtD(D.ws)} – ${fmtD(D.we - DAY)}${D.partial ? ' (tạm tính)' : ''}`];
+  if (D.score !== null) L.push(`Điểm tuần: ${D.score}/100`);
+  L.push(`Tập: ${D.ss.length}/${D.P.weeklyGoal} buổi, ${D.sets} set, tổng tạ ${round(D.vol / 1000, 1)} tấn${D.pvol ? ' (' + pctCh(D.vol, D.pvol) + ' so với tuần trước)' : ''}${D.prs.length ? ', ' + D.prs.length + ' kỷ lục' : ''}`);
+  if (D.cn) L.push(`Cardio: ${D.cn} buổi, ${round(D.km, 1)} km, ${Math.round(D.cmin)} phút`);
+  if (D.valid) L.push(`Ăn uống: trung bình ${Math.round(D.ak)} kcal (mục tiêu ${D.T.kcal}), đạm ${Math.round(D.ap)}g (mục tiêu ${D.T.protein}g), ghi ${D.logged}/7 ngày`);
+  if (D.bw.length) L.push(`Cân nặng: trung bình ${round(D.wavg, 1)} kg${D.pwavg ? ' (' + (D.wavg - D.pwavg >= 0 ? '+' : '') + round(D.wavg - D.pwavg, 1) + ' kg so với tuần trước)' : ''}`);
+  L.push('Ưu tiên tuần tới:'); D.next.forEach((n, i) => L.push(`${i + 1}. ${n}`));
+  return L.join('\n');
+}
+function vReport(key) {
+  const cur = weekStart(Date.now()); let ws = key ? weekStart(new Date(key + 'T12:00').getTime()) : (weekHasData(cur - 7 * DAY) ? cur - 7 * DAY : cur);
+  if (ws > cur) ws = cur; const D = reportData(ws); window.__rep = D;
+  if (!D.partial && (S.reportSeen || '') < dk(ws)) { S.reportSeen = dk(ws); save(); }
+  const st = D.score === null ? ['', 'Chưa đủ dữ liệu'] : D.score >= 80 ? ['', 'Rất tốt'] : D.score >= 60 ? ['', 'Tốt'] : D.score >= 40 ? ['', 'Trung bình'] : ['', 'Cần cải thiện'];
+  const nav = `<div class="row"><a class="btn sm" href="#/report/${dk(ws - 7 * DAY)}">‹</a><div class="sp" style="text-align:center"><b>${fmtD(ws)} – ${fmtD(ws + 6 * DAY)}</b><div class="sub">${D.partial ? 'Tuần đang diễn ra (tạm tính)' : ws === cur - 7 * DAY ? 'Tuần vừa rồi' : 'Tuần đã qua'}</div></div>${ws < cur ? `<a class="btn sm" href="#/report/${dk(ws + 7 * DAY)}">›</a>` : '<span style="width:42px"></span>'}</div>`;
+  if (!weekHasData(ws)) return `${head('Báo cáo tuần', '#/progress')}${nav}<div class="empty mt">Tuần này chưa có dữ liệu để tổng hợp.</div>`;
+  const score = D.score === null ? `<div class="sub">Cần thêm dữ liệu (ít nhất 3 ngày ghi ăn đủ bữa) để chấm điểm.</div>` : `<div class="row"><b style="font-size:42px;letter-spacing:-.03em">${D.score}</b><span class="sub">/ 100 · ${st[1]}</span></div>${D.comp.map(c => `<div class="mt"><div class="row sub"><span class="sp">${c.n}</span><b>${Math.round(c.v * 100)}%</b></div><div class="bar"><i style="width:${Math.round(c.v * 100)}%"></i></div></div>`).join('')}`;
+  const rhythm = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center">${D.days.map((d, i) => `<div style="opacity:${d.future ? .35 : 1}"><div class="sub">${['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'][i]}</div><div>${d.train ? '🏋️' : '·'}</div><div>${d.food ? '🍚' : '·'}</div><div>${d.water ? '💧' : '·'}</div><div>${d.weigh ? '⚖️' : '·'}</div></div>`).join('')}</div><div class="sub mt">🏋️ tập · 🍚 ghi ăn · 💧 ghi nước · ⚖️ cân</div>`;
+  const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
+  const train = `<div class="grid2">${stat(D.ss.length + '/' + D.P.weeklyGoal, 'Buổi tạ')}${stat(round(D.vol / 1000, 1) + 't', 'Tổng tạ ' + (D.pvol ? pctCh(D.vol, D.pvol) : ''))}${stat(D.sets, 'Tổng số set')}${stat(D.ss.length ? Math.round(D.dur) + ' phút' : '—', 'Thời lượng TB')}</div>
+    <div class="sub mt">${D.feel ? 'Cảm giác TB: ' + ['😫', '😐', '🙂', '💪'][Math.max(0, Math.min(3, Math.round(D.feel) - 1))] + ' · ' : ''}${D.cn ? `Cardio: ${D.cn} buổi, ${round(D.km, 1)} km, ${Math.round(D.cmin)} phút ${D.pkm ? pctCh(D.km, D.pkm) : ''}` : 'Chưa ghi cardio'}</div>
+    ${D.prs.length ? `<div class="hint">🏆 Kỷ lục: ${D.prs.map(p => esc(exOf(p.id).name.replace(/ \(.*/, '')) + ' +' + round(p.pct, 1) + '%').join(', ')}</div>` : ''}`;
+  const food = D.valid ? `<div class="grid2">${stat(Math.round(D.ak), 'kcal TB/ngày (mục tiêu ' + D.T.kcal + ')')}${stat(Math.round(D.ap) + 'g', 'Đạm TB (mục tiêu ' + D.T.protein + 'g)')}${stat(D.logged + '/7', 'Ngày có ghi ăn')}${stat(D.wDays ? Math.round(D.aw) + ' ml' : '—', 'Nước TB/ngày')}</div>${barChart(D.days.map((d, i) => ({ label: ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'][i], v: Math.round(d.kc), cur: d.kc > 0 && Math.abs(d.kc - D.T.kcal) / D.T.kcal <= .1 })))}<div class="sub">Cột nổi bật là ngày nằm trong ±10% mục tiêu ${D.T.kcal} kcal.${D.pak ? ' Tuần trước trung bình ' + Math.round(D.pak) + ' kcal.' : ''}</div>` : `<div class="empty">Chưa đủ dữ liệu ăn uống (cần ít nhất 3 ngày ghi từ 800 kcal).</div>`;
+  const body = D.bw.length ? `<div class="grid2">${stat(round(D.wavg, 1) + ' kg', 'Cân TB tuần (' + D.bw.length + ' lần cân)')}${stat(D.pwavg ? (D.wavg - D.pwavg >= 0 ? '+' : '') + round(D.wavg - D.pwavg, 1) + ' kg' : '—', 'So với tuần trước')}</div>${D.waist ? `<div class="sub mt">Vòng eo gần nhất: ${D.waist.waist} cm${D.pwaist ? ' (' + (D.waist.waist - D.pwaist.waist >= 0 ? '+' : '') + round(D.waist.waist - D.pwaist.waist, 1) + ' cm so với trước đó)' : ''}</div>` : ''}` : '<div class="empty">Tuần này chưa cân. Nên cân 2–3 lần/tuần, cùng giờ buổi sáng.</div>';
+  const fl = hFlags(), hl = [];
+  fl.forEach(x => hl.push(`${x.m.n} ${round(x.l.v, 2)} ${x.m.u} (${stInfo[x.st][0].toLowerCase()})`)); if (fattyLiver()) hl.push('Gan nhiễm mỡ độ I (siêu âm)');
+  const health = S.health.records.length || S.health.imaging.length ? `${hl.length ? `<div>${hl.map(h => `<span class="chip warn">${esc(h)}</span>`).join(' ')}</div>` : '<span class="chip good">Chỉ số trong giới hạn</span>'}
+    ${uricHigh() ? `<div class="sub mt">Acid uric cao: tuần này ${D.badFoods.length ? D.badFoods.length + ' lần ghi món/đồ uống cần hạn chế' : 'không ghi món cần hạn chế'}; nước ${D.wDays ? 'TB ' + Math.round(D.aw) + ' ml/ngày' : 'chưa ghi'} (mục tiêu 2000–2500 ml).</div>` : ''}${fattyLiver() ? `<div class="sub">Gan nhiễm mỡ: cân nặng tuần này ${D.bw.length ? 'TB ' + round(D.wavg, 1) + ' kg' : 'chưa ghi'}. Mục tiêu giảm 5–10% cân nặng.</div>` : ''}<a class="btn sm mt" href="#/health">Xem hồ sơ sức khoẻ</a>` : '<div class="sub">Chưa có hồ sơ sức khoẻ. <a href="#/health" style="text-decoration:underline">Thêm tại đây</a>.</div>';
+  const insl = (arr, lvl, ic) => arr.map(t => `<div class="ins ${lvl}"><div class="sub">${ic} ${esc(t)}</div></div>`).join('');
+  return `${head('Báo cáo tuần', '#/progress')}${nav}
+  <div class="card"><div class="sub">Điểm tuần</div>${score}</div>
+  <h2>Nhịp trong tuần</h2><div class="card">${rhythm}</div>
+  ${D.good.length || D.bad.length ? `<h2>Nhận định</h2>${insl(D.good, 'good', '✅')}${insl(D.bad, 'warn', '⚠️')}` : ''}
+  <h2>Tập luyện</h2><div class="card">${train}</div>
+  <h2>Ăn uống</h2><div class="card">${food}</div>
+  <h2>Cơ thể</h2><div class="card">${body}</div>
+  <h2>Sức khoẻ</h2><div class="card">${health}</div>
+  <h2>Ưu tiên cho tuần tới</h2>${D.next.map((n, i) => `<div class="ins"><b>${i + 1}.</b> <span class="sub">${esc(n)}</span></div>`).join('')}
+  <div class="grid2 mt noprint"><button class="btn" data-a="repCopy">📋 Sao chép tóm tắt</button><button class="btn" data-a="repShare">📤 Chia sẻ</button><button class="btn" data-a="repPrint">🖨️ In / lưu PDF</button><button class="btn" data-a="repIcs">📅 Nhắc xem báo cáo</button></div>
+  <div class="sub mt">Báo cáo tự tổng hợp từ dữ liệu bạn ghi. Bản sao chép và chia sẻ không gồm thông tin sức khoẻ. Ngày ghi ăn dưới 800 kcal không được tính.</div>`;
+}
+
 /* ---------- Thư viện bài ---------- */
 function vExercises() {
   const groups = {}; allEx().forEach(e => (groups[e.g] = groups[e.g] || []).push(e));
@@ -702,7 +809,7 @@ function render() {
     case '': html = vHome(); break; case 'train': html = vTrain(); break; case 'workout': html = vWorkout(); break;
     case 'routine': html = vRoutine(b); break; case 'cardio': html = vCardio(); break; case 'body': html = vBody(); break;
     case 'food': html = vFood(); break; case 'progress': html = vProgress(); break; case 'exercises': html = vExercises(); break;
-    case 'profile': html = vProfile(); break; case 'health': html = vHealth(); break; default: html = vHome();
+    case 'profile': html = vProfile(); break; case 'health': html = vHealth(); break; case 'report': html = vReport(b); break; default: html = vHome();
   }
   if (html !== '') { $('#app').innerHTML = html; window.scrollTo(0, 0); if (a === 'body') loadPhotos(); if (a === 'health') loadDocs(); }
   drawNav(route);
@@ -828,6 +935,14 @@ const A = {
     modal(`<div class="row"><b class="sp">${esc(p.label)}</b><button class="btn sm" data-a="closeModal">Đóng</button></div>${p.blob.type === 'application/pdf' ? `<a class="btn pri block mt" href="${p.url}" target="_blank" rel="noopener">Mở PDF</a>` : `<img src="${p.url}" alt="" style="width:100%;border-radius:12px;margin-top:10px">`}`);
   },
   async docDel(el) { if (!confirm('Xoá tài liệu này?')) return; await idbDo('readwrite', s => s.delete(el.dataset.id)); loadDocs(); },
+  async repCopy() { const t = reportText(window.__rep); try { await navigator.clipboard.writeText(t); toast('Đã sao chép tóm tắt'); } catch (e) { prompt('Sao chép nội dung dưới đây:', t); } },
+  async repShare() { const t = reportText(window.__rep); if (navigator.share) { try { await navigator.share({ title: 'Báo cáo tuần FitTrack', text: t }); } catch (e) {} } else A.repCopy(); },
+  repPrint() { window.print(); },
+  repIcs() {
+    const n = new Date(); n.setDate(n.getDate() + (8 - n.getDay()) % 7 || 7); const ds = n.getFullYear() + String(n.getMonth() + 1).padStart(2, '0') + String(n.getDate()).padStart(2, '0') + 'T080000';
+    const ev = ['BEGIN:VEVENT', 'UID:fittrack-report@local', 'DTSTAMP:' + ds, 'DTSTART:' + ds, 'DURATION:PT15M', 'RRULE:FREQ=WEEKLY;BYDAY=MO', 'SUMMARY:Xem báo cáo tuần FitTrack 📊', 'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:Báo cáo tuần đã sẵn sàng', 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT'].join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//FitTrack VN//VI\r\n' + ev + '\r\nEND:VCALENDAR'], { type: 'text/calendar' })); a.download = 'fittrack-bao-cao-tuan.ics'; a.click();
+  },
   wipe() { if (confirm('Xoá TOÀN BỘ dữ liệu? Không thể hoàn tác.' + (SY.token ? ' Dữ liệu đồng bộ trên GitHub cũng sẽ bị xoá.' : '')) && confirm('Chắc chắn chứ?')) { S = defaults(); save(); applyTheme(); stopRest(); try { idbDo('readwrite', s => s.clear()); } catch (e) {} rerender(); } },
 };
 document.addEventListener('click', e => {

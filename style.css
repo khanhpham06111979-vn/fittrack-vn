@@ -57,3 +57,4 @@ textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var
 .ins{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:14px;padding:12px;margin:8px 0}
 .ins.warn{border-left-color:#F59E0B}.ins.good{border-left-color:var(--ok)}.ins .sub{margin-top:3px;color:var(--ink);opacity:.8}
 .chip.warn{background:color-mix(in srgb,#F59E0B 28%,var(--card))}.chip.good{background:color-mix(in srgb,#2FA84F 22%,var(--card))}.chip.info{background:color-mix(in srgb,#EAB308 22%,var(--card))}
+@media print{#nav,#restbar,#toast,.noprint,.btn.sm{display:none!important}body{background:#fff}#app{padding:0;max-width:none}.card,.ins{box-shadow:none;break-inside:avoid}}
