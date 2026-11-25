@@ -53,3 +53,4 @@ svg.chart text{fill:var(--mut);font-size:9px}
 .days{display:flex;gap:6px}.days .btn{flex:1;padding:9px 0}.days .btn.on{background:var(--acc);color:var(--acc-ink);border-color:transparent}
 .warn{background:color-mix(in srgb,#F59E0B 18%,var(--card));border:1px solid #F59E0B;border-radius:16px;padding:12px;margin:10px 0}
 textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px;width:100%;resize:vertical}
+.tin{width:auto;padding:3px 6px;font-size:12px;margin-top:4px;border-radius:8px}
