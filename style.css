@@ -54,3 +54,5 @@ svg.chart text{fill:var(--mut);font-size:9px}
 .warn{background:color-mix(in srgb,#F59E0B 18%,var(--card));border:1px solid #F59E0B;border-radius:16px;padding:12px;margin:10px 0}
 textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px;width:100%;resize:vertical}
 .tin{width:auto;padding:3px 6px;font-size:12px;margin-top:4px;border-radius:8px}
+.ins{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:14px;padding:12px;margin:8px 0}
+.ins.warn{border-left-color:#F59E0B}.ins.good{border-left-color:var(--ok)}.ins .sub{margin-top:3px;color:var(--ink);opacity:.8}

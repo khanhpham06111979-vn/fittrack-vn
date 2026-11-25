@@ -386,6 +386,7 @@ function vProgress() {
   } else lift = '<div class="empty">Hoàn thành vài buổi tập để xem tiến bộ từng bài.</div>';
   return `${head('Tiến độ')}<div class="grid3"><div class="stat"><b>${t}</b><span>Buổi tạ</span></div><div class="stat"><b>${round(tv / 1000, 1)}t</b><span>Tổng tạ</span></div><div class="stat"><b>${round(km, 1)}</b><span>Km đã chạy</span></div></div>
   <div class="grid2 mt"><a class="btn" href="#/body">⚖️ Cân nặng & số đo</a><a class="btn" href="#/cardio">🏃 Cardio</a></div>
+  ${vInsights()}
   <h2>Số buổi tạ mỗi tuần</h2><div class="card">${barChart(cnt)}</div><h2>Khối lượng tạ mỗi tuần (tấn)</h2><div class="card">${barChart(vol)}</div><h2>Tiến bộ theo bài</h2><div class="card">${lift}</div>${vTiming()}`;
 }
 
@@ -431,6 +432,131 @@ function vTiming() {
     : `<div class="card"><div class="grid2"><div class="stat"><b>${Math.round(pre / cnt * 100)}%</b><span>có bữa ăn 0,5–3 giờ trước tập</span></div><div class="stat"><b>${Math.round(post / cnt * 100)}%</b><span>có ≥20g đạm trong 2 giờ sau tập</span></div></div>
     <div class="hint">${post / cnt < .6 ? 'Hãy bổ sung bữa giàu đạm (20–40g) trong 2 giờ sau tập để hỗ trợ phục hồi cơ. ' : ''}${pre / cnt < .6 ? 'Ăn nhẹ có tinh bột (chuối, yến mạch, cơm) 1–2 giờ trước tập giúp bạn có sức hơn.' : ''}${post / cnt >= .6 && pre / cnt >= .6 ? 'Bạn đang ăn trước và sau tập khá tốt, hãy duy trì.' : ''}</div><div class="sub">Dựa trên ${cnt} buổi tập trong 60 ngày qua.</div></div>`;
   return `<h2>Phân tích: giờ tập</h2>${wk}<h2>Phân tích: giờ ăn</h2>${fd}<h2>Ăn uống quanh buổi tập</h2>${lk}`;
+}
+
+/* ---------- Phân tích chuyên sâu ---------- */
+const GROUPS = { 'Ngực': 10, 'Lưng': 10, 'Chân': 10, 'Vai': 8, 'Tay trước': 6, 'Tay sau': 6, 'Mông': 6, 'Core': 6, 'Bắp chân': 6 };
+const GSHORT = { 'Tay trước': 'Tay T.', 'Tay sau': 'Tay S.', 'Bắp chân': 'B.chân' };
+const PUSHG = ['Ngực', 'Vai', 'Tay sau'], PULLG = ['Lưng', 'Tay trước'];
+const avgOf = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+function lsSlope(pts) { // độ dốc bình phương tối thiểu (đơn vị y trên mỗi ngày)
+  const mx = avgOf(pts.map(p => p.t)), my = avgOf(pts.map(p => p.y)); let n = 0, d = 0;
+  pts.forEach(p => { n += (p.t - mx) * (p.y - my); d += (p.t - mx) ** 2; }); return d ? n / d : 0;
+}
+function vInsights() {
+  const now = Date.now(), I = [], P = S.profile, T = targets(), gl = P.goal;
+  const add = (lvl, title, body) => I.push({ lvl, title, body });
+  const ss = [...S.sessions].sort((a, b) => a.date - b.date), first = ss.length ? ss[0].date : now, histDays = (now - first) / DAY;
+  const kpi = { adh: null, kc: null, pr: null, wt: null };
+
+  /* 1. Tuân thủ lịch tập */
+  const fullWeeks = weeksBack(5).slice(0, -1).filter(w => w >= weekStart(first)).map(w => weekStats(w).sessions);
+  if (fullWeeks.length) {
+    const ok = fullWeeks.filter(n => n >= P.weeklyGoal).length; kpi.adh = Math.round(ok / fullWeeks.length * 100);
+    const av = round(avgOf(fullWeeks), 1);
+    if (kpi.adh >= 75) add('good', 'Tập rất đều đặn', `Đạt mục tiêu ${P.weeklyGoal} buổi ở ${ok}/${fullWeeks.length} tuần gần nhất (trung bình ${av} buổi/tuần). Đều đặn là yếu tố dự báo kết quả mạnh nhất.`);
+    else if (kpi.adh >= 40) add('info', 'Tuân thủ lịch ở mức trung bình', `Đạt mục tiêu ${ok}/${fullWeeks.length} tuần, trung bình ${av} buổi/tuần. Thử đặt sẵn ngày giờ cố định trong phần Nhắc lịch tập.`);
+    else add('warn', 'Chưa đạt mục tiêu số buổi', `Chỉ ${ok}/${fullWeeks.length} tuần đạt ${P.weeklyGoal} buổi (trung bình ${av}). Nếu mục tiêu hiện quá cao, hạ xuống ${Math.max(2, Math.round(av) || 2)} buổi/tuần: đều đặn quan trọng hơn lý tưởng.`);
+  } else if (ss.length) add('info', 'Bạn vừa bắt đầu', `Mới có ${ss.length} buổi tập. Cần hết ít nhất một tuần đầy đủ để đánh giá mức tuân thủ.`);
+
+  /* 2. Tải tập (acute:chronic) */
+  if (histDays >= 14) {
+    const vol = (a, b) => ss.filter(s => s.date >= a && s.date < b).reduce((t, s) => t + s.vol, 0);
+    const acute = vol(now - 7 * DAY, now + 1), chronic = vol(now - 35 * DAY, now - 7 * DAY) / Math.min(4, (histDays - 7) / 7 || 1);
+    if (chronic > 0) { const r = acute / chronic, pct = Math.round((r - 1) * 100);
+      if (r > 1.5) add('warn', 'Tải tập tăng quá nhanh', `7 ngày qua cao hơn trung bình các tuần trước ${pct}%. Tăng đột ngột trên khoảng 30–50% làm tăng nguy cơ đau khớp, chấn thương. Cân nhắc giữ tải tuần này hoặc làm tuần nhẹ.`);
+      else if (r < 0.6) add('info', 'Tải tập giảm rõ rệt', `7 ngày qua thấp hơn trung bình các tuần trước ${Math.abs(pct)}%. Nếu không chủ ý nghỉ nhẹ, hãy kiểm tra lịch và mức mệt.`);
+      else add('good', 'Tải tập tăng ổn định', `Khối lượng 7 ngày qua ${pct >= 0 ? '+' : ''}${pct}% so với trung bình các tuần trước, nằm trong vùng an toàn.`); }
+  }
+
+  /* 3. Cân đối nhóm cơ */
+  const wkDiv = Math.max(1, Math.min(4, histDays / 7)), gs = {}; Object.keys(GROUPS).forEach(g => gs[g] = 0);
+  ss.filter(s => s.date >= now - 28 * DAY).forEach(s => s.exs.forEach(e => { const g = exOf(e.id).g; if (g in gs) gs[g] += e.sets.length; }));
+  const perWk = g => gs[g] / wkDiv;
+  if (ss.length >= 3) {
+    const low = Object.keys(GROUPS).filter(g => perWk(g) < GROUPS[g] * 0.6);
+    if (low.length) add('warn', 'Nhóm cơ đang tập ít', `${low.map(g => `${g} (${round(perWk(g), 1)}/${GROUPS[g]} set/tuần)`).join(', ')}. Mức tối thiểu hiệu quả thường là khoảng ${GROUPS['Ngực']} set cứng mỗi tuần cho nhóm lớn và ${GROUPS['Tay sau']} cho nhóm nhỏ.`);
+    else add('good', 'Phân bổ nhóm cơ cân đối', 'Mọi nhóm cơ chính đều đạt gần mức set tối thiểu mỗi tuần.');
+    const push = PUSHG.reduce((t, g) => t + perWk(g), 0), pull = PULLG.reduce((t, g) => t + perWk(g), 0);
+    if (push > 0 && pull < push * 0.7) add('warn', 'Lệch đẩy nhiều hơn kéo', `Tỷ lệ đẩy:kéo hiện là ${round(push / Math.max(pull, .1), 1)}:1. Nên kéo bằng hoặc nhiều hơn đẩy để bảo vệ vai và tư thế. Thêm bài kéo xô, kéo cáp, face pull.`);
+  }
+
+  /* 4. Sức mạnh theo bài */
+  const lifts = {}; ss.forEach(s => s.exs.forEach(e => { const ex = exOf(e.id); if (ex.type === 'time' || !e.sets.length) return; (lifts[e.id] = lifts[e.id] || []).push({ d: s.date, v: Math.max(...e.sets.map(z => e1rm(z.w, z.r))) }); }));
+  const multi = Object.entries(lifts).filter(([, l]) => l.length >= 2).map(([id, l]) => ({ id, n: l.length, pct: (l[l.length - 1].v / l[0].v - 1) * 100, l }));
+  const up = multi.filter(x => x.pct > 1).sort((a, b) => b.pct - a.pct).slice(0, 3);
+  if (up.length) add('good', 'Bài đang tiến bộ nhanh', up.map(x => `${exOf(x.id).name.replace(/ \(.*/, '')} +${round(x.pct, 1)}% (${x.n} buổi)`).join('; ') + '.');
+  const stall = multi.filter(x => x.n >= 4 && Math.max(...x.l.slice(-3).map(z => z.v)) <= Math.max(...x.l.slice(0, -3).map(z => z.v)) + 0.01);
+  if (stall.length) add('warn', 'Bài đang chững', `${stall.map(x => exOf(x.id).name.replace(/ \(.*/, '')).join(', ')}: 3 buổi gần nhất chưa vượt đỉnh trước. Thử tăng reps trong vùng 8–12, đổi thứ tự bài, nghỉ nhẹ một tuần hoặc ăn thêm đủ calo.`);
+
+  /* 5. Cân nặng, vòng eo */
+  const wpts = S.body.filter(b => b.weight && b.date >= now - 42 * DAY).sort((a, b) => a.date - b.date);
+  let wSlopeWk = null;
+  if (wpts.length >= 3 && (wpts[wpts.length - 1].date - wpts[0].date) >= 7 * DAY) {
+    wSlopeWk = lsSlope(wpts.map(b => ({ t: b.date / DAY, y: b.weight }))) * 7; kpi.wt = wSlopeWk;
+    const cur = wpts[wpts.length - 1].weight, pct = wSlopeWk / cur * 100, rate = `${wSlopeWk > 0 ? '+' : ''}${round(wSlopeWk, 2)} kg/tuần (${round(pct, 2)}% cân nặng)`;
+    let eta = '';
+    if (P.goalWeight && ((gl === 'giam-mo' && wSlopeWk < -0.05 && cur > P.goalWeight) || (gl === 'tang-co' && wSlopeWk > 0.05 && cur < P.goalWeight))) eta = ` Giữ tốc độ này, bạn đạt ${P.goalWeight} kg sau khoảng ${Math.ceil(Math.abs((cur - P.goalWeight) / wSlopeWk))} tuần.`;
+    if (gl === 'giam-mo') {
+      if (pct < -1) add('warn', 'Giảm cân hơi nhanh', `Xu hướng ${rate}. Giảm trên 1%/tuần dễ mất cơ và tụt năng lượng: tăng nhẹ calo hoặc đạm.`);
+      else if (pct <= -0.25) add('good', 'Tốc độ giảm cân hợp lý', `Xu hướng ${rate}, nằm trong vùng 0,25–1%/tuần là bền vững.${eta}`);
+      else add('info', 'Cân nặng đang đi ngang', `Xu hướng ${rate}. Nếu mục tiêu là giảm mỡ, cân nhắc giảm 100–200 kcal/ngày hoặc thêm 1 buổi cardio, rồi theo dõi 2 tuần.`);
+    } else if (gl === 'tang-co') {
+      if (pct > 0.5) add('warn', 'Tăng cân hơi nhanh', `Xu hướng ${rate}. Trên 0,5%/tuần phần lớn là mỡ: giảm nhẹ calo dư.`);
+      else if (pct >= 0.1) add('good', 'Tốc độ tăng cân hợp lý', `Xu hướng ${rate}, vùng 0,1–0,5%/tuần phù hợp để tăng cơ.${eta}`);
+      else add('info', 'Cân nặng chưa tăng', `Xu hướng ${rate}. Muốn tăng cơ cần dư khoảng 200–300 kcal/ngày.`);
+    } else add(Math.abs(pct) <= 0.5 ? 'good' : 'info', 'Xu hướng cân nặng (recomp)', `${rate}. Với giảm mỡ và tăng cơ đồng thời, cân đi ngang hoặc thay đổi nhẹ là bình thường, hãy theo dõi vòng eo và sức mạnh.`);
+  } else add('info', 'Chưa đủ số đo cân', `Cần ít nhất 3 lần cân cách nhau từ 7 ngày để tính xu hướng (hiện ${wpts.length}). Nên cân cùng giờ mỗi sáng, 2–3 lần/tuần.`);
+  const wa = S.body.filter(b => b.waist && b.date >= now - 56 * DAY).sort((a, b) => a.date - b.date);
+  if (wa.length >= 2 && wa[wa.length - 1].date - wa[0].date >= 7 * DAY) {
+    const d = round(wa[wa.length - 1].waist - wa[0].waist, 1);
+    add(d < 0 ? 'good' : d > 1 ? 'warn' : 'info', 'Vòng eo', `Thay đổi ${d > 0 ? '+' : ''}${d} cm trong ${Math.round((wa[wa.length - 1].date - wa[0].date) / DAY)} ngày.${wSlopeWk !== null && Math.abs(wSlopeWk) < .15 && d < 0 ? ' Cân giữ nguyên nhưng eo giảm là dấu hiệu tốt của giảm mỡ, tăng cơ.' : ''}`);
+  }
+
+  /* 6. Dinh dưỡng */
+  const fd = Object.keys(S.food).filter(k => k >= dk(now - 28 * DAY)).map(k => { const t = foodTotal(k); return { day: k, kc: t.k, pr: t.p }; });
+  const valid = fd.filter(d => d.kc >= 800), v14 = valid.filter(d => d.day >= dk(now - 14 * DAY));
+  if (v14.length >= 3) {
+    const ak = avgOf(v14.map(d => d.kc)), ap = avgOf(v14.map(d => d.pr));
+    kpi.kc = Math.round(v14.filter(d => Math.abs(d.kc - T.kcal) / T.kcal <= .1).length / v14.length * 100);
+    kpi.pr = Math.round(v14.filter(d => d.pr >= T.protein * .9).length / v14.length * 100);
+    const diff = Math.round(ak - T.kcal);
+    add(Math.abs(diff) <= T.kcal * .1 ? 'good' : 'warn', 'Năng lượng so với mục tiêu', `Trung bình ${Math.round(ak)} kcal/ngày (mục tiêu ${T.kcal}), ${diff >= 0 ? 'dư' : 'thiếu'} ${Math.abs(diff)} kcal. Đạt ±10% mục tiêu ở ${kpi.kc}% số ngày (${v14.length} ngày có dữ liệu).`);
+    add(ap >= T.protein * .9 ? 'good' : 'warn', 'Đạm', `Trung bình ${Math.round(ap)}g/ngày (mục tiêu ${T.protein}g), đạt ở ${kpi.pr}% số ngày.${ap < T.protein * .9 ? ' Thêm trứng, ức gà, sữa chua, đậu hũ hoặc whey vào các bữa còn thiếu.' : ''}`);
+    const wk = valid.filter(d => [0, 6].includes(new Date(d.day + 'T12:00').getDay())), wd = valid.filter(d => ![0, 6].includes(new Date(d.day + 'T12:00').getDay()));
+    if (wk.length >= 2 && wd.length >= 3) { const a = avgOf(wk.map(d => d.kc)), b = avgOf(wd.map(d => d.kc)), p = Math.round((a / b - 1) * 100);
+      if (p >= 15) add('warn', 'Cuối tuần ăn nhiều hơn', `Thứ 7 và CN trung bình ${Math.round(a)} kcal, cao hơn ngày thường ${p}%. Đây là nguyên nhân phổ biến khiến cân đứng yên dù tuần ăn đúng.`); }
+  } else add('info', 'Chưa đủ dữ liệu ăn uống', `Cần ít nhất 3 ngày ghi đủ bữa (từ 800 kcal trở lên) để đánh giá. Hiện có ${v14.length} ngày. Ngày ghi dở dang sẽ không được tính để tránh kết luận sai.`);
+  const wp28 = S.body.filter(b => b.weight && b.date >= now - 28 * DAY).sort((a, b) => a.date - b.date);
+  if (wp28.length >= 3 && wp28[wp28.length - 1].date - wp28[0].date >= 14 * DAY && valid.length >= 10) {
+    const sl = lsSlope(wp28.map(b => ({ t: b.date / DAY, y: b.weight }))), est = Math.round(avgOf(valid.map(d => d.kc)) - sl * 7700);
+    add('info', 'Mức đốt calo thực tế (ước tính)', `Từ ăn uống và cân nặng 4 tuần: khoảng ${est} kcal/ngày, so với công thức ${T.tdee}. Nếu chênh nhiều, hãy dùng số thực tế để đặt mục tiêu calo. Chính xác khi bạn ghi ăn đầy đủ.`);
+  }
+
+  /* 7. Cardio */
+  const cs = S.cardio, c7 = cs.filter(c => c.date >= now - 7 * DAY), c14 = cs.filter(c => c.date >= now - 14 * DAY && c.date < now - 7 * DAY);
+  const k7 = c7.reduce((t, c) => t + (c.km || 0), 0), k14 = c14.reduce((t, c) => t + (c.km || 0), 0), m28 = cs.filter(c => c.date >= now - 28 * DAY).reduce((t, c) => t + c.min, 0) / 4;
+  if (k14 > 0 && k7 > k14 * 1.1) add('warn', 'Tăng quãng đường chạy nhanh', `7 ngày qua ${round(k7, 1)} km so với ${round(k14, 1)} km tuần trước (+${Math.round((k7 / k14 - 1) * 100)}%). Quy tắc an toàn là tăng không quá khoảng 10% mỗi tuần.`);
+  if (cs.length >= 2) add(m28 >= 150 ? 'good' : 'info', 'Cardio hằng tuần', `Trung bình ${Math.round(m28)} phút/tuần trong 4 tuần. Khuyến nghị sức khoẻ chung là từ 150 phút/tuần cường độ vừa.`);
+
+  /* Hiển thị */
+  const order = { warn: 0, good: 1, info: 2 }, ic = { warn: '⚠️', good: '✅', info: '💡' };
+  I.sort((a, b) => order[a.lvl] - order[b.lvl]);
+  const pctTxt = v => v === null ? '—' : v + '%';
+  const kp = `<div class="grid2">
+    <div class="stat"><b>${pctTxt(kpi.adh)}</b><span>Tuần đạt mục tiêu buổi tập</span></div><div class="stat"><b>${pctTxt(kpi.kc)}</b><span>Ngày đạt calo (±10%)</span></div>
+    <div class="stat"><b>${pctTxt(kpi.pr)}</b><span>Ngày đủ đạm (≥90%)</span></div><div class="stat"><b>${kpi.wt === null ? '—' : (kpi.wt > 0 ? '+' : '') + round(kpi.wt, 2)}</b><span>Cân nặng kg/tuần</span></div></div>`;
+  const maxLift = Math.max(0, ...Object.values(lifts).map(l => l.length)), wspan = wpts.length >= 2 ? (wpts[wpts.length - 1].date - wpts[0].date) / DAY : 0;
+  const need = [['Buổi tập', ss.length, 3, 'tải tập và cân đối nhóm cơ'], ['Ngày ghi ăn đủ bữa', v14.length, 3, 'đánh giá calo và đạm'], ['Lần cân', wspan >= 7 ? wpts.length : Math.min(wpts.length, 2), 3, 'xu hướng cân nặng (cách ≥7 ngày)'], ['Buổi cho một bài tập', maxLift, 4, 'phát hiện bài đang chững']].filter(n => n[1] < n[2]);
+  const unlock = need.length ? `<div class="card"><b>Mở khoá thêm phân tích</b><div class="sub">Càng nhiều dữ liệu, kết luận càng đáng tin.</div>${need.map(n => `<div class="mt"><div class="row"><span class="sp">${n[0]}</span><b>${n[1]}/${n[2]}</b></div><div class="bar"><i style="width:${Math.round(n[1] / n[2] * 100)}%"></i></div><div class="sub">Mở khoá: ${n[3]}</div></div>`).join('')}</div>` : '';
+  const cards = I.map(x => `<div class="ins ${x.lvl}"><b>${ic[x.lvl]} ${esc(x.title)}</b><div class="sub">${esc(x.body)}</div></div>`).join('');
+  // Biểu đồ
+  const charts = [];
+  if (ss.length >= 1) { const keys = Object.keys(GROUPS); charts.push(`<h2>Set mỗi nhóm cơ (trung bình/tuần)</h2><div class="card">${barChart(keys.map(g => ({ label: GSHORT[g] || g, v: round(perWk(g), 1), cur: perWk(g) >= GROUPS[g] })))}<div class="sub">Màu nổi bật là nhóm đã đạt mức tối thiểu (${GROUPS['Ngực']} set cho nhóm lớn, ${GROUPS['Tay sau']} cho nhóm nhỏ).</div></div>`); }
+  if (wpts.length >= 2) charts.push(`<h2>Xu hướng cân nặng (6 tuần)</h2><div class="card">${lineChart(wpts.map(b => ({ x: fmtD(b.date), y: b.weight })))}</div>`);
+  if (fd.length) { const days = Array.from({ length: 10 }, (_, i) => now - (9 - i) * DAY); charts.push(`<h2>Calo 10 ngày gần nhất</h2><div class="card">${barChart(days.map((t, i) => { const k = foodTotal(dk(t)).k; return { label: fmtD(t), v: Math.round(k), cur: k > 0 && Math.abs(k - T.kcal) / T.kcal <= .1 }; }))}<div class="sub">Mục tiêu ${T.kcal} kcal. Cột nổi bật là ngày nằm trong ±10%.</div></div>`); }
+  if (ss.length >= 4) { const wd = [0, 0, 0, 0, 0, 0, 0]; ss.forEach(s => wd[(new Date(s.date).getDay() + 6) % 7]++); charts.push(`<h2>Bạn hay tập vào thứ mấy</h2><div class="card">${barChart(['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((l, i) => ({ label: l, v: wd[i], cur: wd[i] === Math.max(...wd) })))}</div>`); }
+  return `<h2>Chỉ số chính</h2>${kp}${unlock}<h2>Nhận định của chuyên gia</h2>${cards || '<div class="empty">Chưa có nhận định.</div>'}<div class="sub" style="margin:6px 4px">Nhận định dựa trên quy tắc phổ biến trong huấn luyện và dinh dưỡng thể thao, mang tính tham khảo, không thay thế tư vấn y tế hay huấn luyện viên.</div>${charts.join('')}`;
 }
 
 /* ---------- Thư viện bài ---------- */
