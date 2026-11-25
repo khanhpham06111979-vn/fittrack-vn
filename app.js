@@ -18,14 +18,14 @@ const defaults = () => ({
   profile: { name: '', sex: 'm', age: 30, height: 170, weight: 70, goalWeight: 0, goal: 'recomp', activity: 1.375, weeklyGoal: 3, rest: 90, accent: '#B7E21E', mode: 'auto' },
   remind: { on: false, days: [1, 3, 5], time: '18:00' }, deload: { on: false, start: 0, last: 0, every: 6 }, customFoods: [],
   routines: JSON.parse(JSON.stringify(DEFAULT_ROUTINES)), customEx: [],
-  sessions: [], cardio: [], body: [], food: {}, water: {}, active: null,
+  sessions: [], cardio: [], body: [], food: {}, water: {}, active: null, updated: 0,
 });
 let S = load();
 function load() {
   try { const d = JSON.parse(localStorage.getItem(KEY)); if (d) { const b = defaults(); return { ...b, ...d, profile: { ...b.profile, ...d.profile }, remind: { ...b.remind, ...d.remind }, deload: { ...b.deload, ...d.deload } }; } } catch (e) {}
   return defaults();
 }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+function save() { S.updated = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} schedPush(); }
 
 const allEx = () => [...EXERCISES, ...S.customEx];
 const exOf = id => allEx().find(e => e.id === id) || { id, name: id, g: '', type: 'machine', min: 8, max: 12 };
@@ -383,7 +383,7 @@ function vProfile() {
   <label>Mục tiêu chính</label><select data-in="pf" data-f="goal" data-s="1"><option value="recomp" ${p.goal === 'recomp' ? 'selected' : ''}>Giảm mỡ và tăng cơ (recomp)</option><option value="giam-mo" ${p.goal === 'giam-mo' ? 'selected' : ''}>Giảm mỡ</option><option value="tang-co" ${p.goal === 'tang-co' ? 'selected' : ''}>Tăng cơ</option></select>
   <label>Mức vận động hằng ngày</label><select data-in="pf" data-f="activity"><option value="1.2" ${p.activity == 1.2 ? 'selected' : ''}>Ít (ngồi nhiều)</option><option value="1.375" ${p.activity == 1.375 ? 'selected' : ''}>Nhẹ (tập 1–3 buổi/tuần)</option><option value="1.55" ${p.activity == 1.55 ? 'selected' : ''}>Vừa (3–5 buổi/tuần)</option><option value="1.725" ${p.activity == 1.725 ? 'selected' : ''}>Cao (tập mỗi ngày)</option></select>
   <div class="grid2">${f('Mục tiêu buổi tạ/tuần', 'weeklyGoal')}${f('Nghỉ giữa set (giây)', 'rest')}</div></div>
-  <h2>Mục tiêu hằng ngày (tự tính)</h2><div class="grid2"><div class="stat"><b>${t.kcal}</b><span>kcal/ngày (TDEE ${t.tdee})</span></div><div class="stat"><b>${t.protein}g</b><span>đạm/ngày</span></div></div>
+  <h2>Mục tiêu hằng ngày (tự tính)</h2><div class="grid2"><div class="stat"><b id="tg-k">${t.kcal}</b><span>kcal/ngày (TDEE <span id="tg-t">${t.tdee}</span>)</span></div><div class="stat"><b id="tg-p">${t.protein}g</b><span>đạm/ngày</span></div></div>
   <div class="sub mt">Công thức Mifflin-St Jeor, chỉ mang tính tham khảo. Điều chỉnh theo cân nặng thực tế sau 2–3 tuần.</div>
   <h2>Giao diện</h2><div class="card"><label>Màu chủ đạo</label><div class="sw">${ACCENTS.map(a => `<button class="${p.accent === a[0] ? 'on' : ''}" style="background:${a[0]}" data-a="accent" data-c="${a[0]}" aria-label="${a[2]}"></button>`).join('')}</div>
   <label>Chế độ</label><div class="days">${[['auto', 'Tự động'], ['light', 'Sáng'], ['dark', 'Tối']].map(m => `<button class="btn ${p.mode === m[0] ? 'on' : ''}" data-a="mode" data-m="${m[0]}">${m[1]}</button>`).join('')}</div></div>
@@ -394,6 +394,7 @@ function vProfile() {
   <div class="sub mt">Web app không thể tự nhắc khi đã đóng hẳn. Cách chắc chắn nhất là thêm vào lịch (nút trên, lịch sẽ báo trước 10 phút). Khi app đang mở, app cũng gửi thông báo nếu bạn cho phép.</div></div>
   <h2>Tuần nhẹ (deload)</h2><div class="card">${deloadActive() ? `<b>🌿 Đang trong tuần nhẹ</b><div class="sub">Tạ giảm ~10%, bớt 1 set. Tự kết thúc sau 7 ngày.</div><button class="btn block mt" data-a="dlStop">Kết thúc sớm</button>` : `<div>Đã tập <b>${trainingWeeks()}</b> tuần từ lần nghỉ nhẹ gần nhất.${deloadDue() ? ' <span class="chip">Nên nghỉ nhẹ</span>' : ''}</div><div class="sub">Cứ vài tuần tập nặng nên có một tuần giảm tải để cơ, khớp và thần kinh phục hồi.</div><button class="btn pri block mt" data-a="dlStart">Bắt đầu tuần nhẹ</button>`}
   <label>Gợi ý sau mỗi (tuần)</label><input inputmode="numeric" data-in="dlEvery" value="${S.deload.every}"></div>
+  <h2>Đồng bộ giữa các máy</h2>${syncCard()}
   <h2>Dữ liệu</h2><div class="card"><button class="btn block" data-a="export">Xuất sao lưu (JSON)</button><label class="btn block mt" style="margin:12px 0 0">Nhập sao lưu<input type="file" accept="application/json" data-in="import" hidden></label>
   <button class="btn block mt" data-a="demo">${hasDemo ? 'Xoá dữ liệu demo' : 'Nạp dữ liệu demo để xem thử'}</button><button class="btn block danger mt" data-a="wipe">Xoá toàn bộ dữ liệu</button></div>
   <div class="sub mt">Mọi dữ liệu nằm trên điện thoại của bạn, không gửi đi đâu. Hãy xuất sao lưu thỉnh thoảng.</div>`;
@@ -520,7 +521,13 @@ const A = {
     const a = l[0], b = l[l.length - 1];
     modal(`<div class="row"><b class="sp">Góc: ${esc(last.label)}</b><button class="btn sm" data-a="closeModal">Đóng</button></div><div class="grid2 mt">${[a, b].map((p, i) => `<div><img src="${p.url}" alt="" style="width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:12px"><div class="sub" style="text-align:center">${i ? 'Mới nhất' : 'Đầu tiên'} · ${fmtD(p.date)}</div></div>`).join('')}</div><div class="sub mt">Cách nhau ${Math.round((b.date - a.date) / DAY)} ngày.</div>`);
   },
-  wipe() { if (confirm('Xoá TOÀN BỘ dữ liệu? Không thể hoàn tác.') && confirm('Chắc chắn chứ?')) { S = defaults(); save(); applyTheme(); stopRest(); try { idbDo('readwrite', s => s.clear()); } catch (e) {} rerender(); } },
+  async syConnect() {
+    const t = $('#sy-token').value.trim(); if (!t) return toast('Dán mã truy cập vào ô trên');
+    SY = { token: t }; saveSY(); SY.msg = 'Đang kết nối...'; rerender(); await syncNow(true); rerender();
+  },
+  async syNow() { await syncNow(true); rerender(); },
+  syOff() { if (confirm('Ngắt đồng bộ trên máy này? Dữ liệu trên máy vẫn giữ nguyên.')) { SY = {}; saveSY(); rerender(); } },
+  wipe() { if (confirm('Xoá TOÀN BỘ dữ liệu? Không thể hoàn tác.' + (SY.token ? ' Dữ liệu đồng bộ trên GitHub cũng sẽ bị xoá.' : '')) && confirm('Chắc chắn chứ?')) { S = defaults(); save(); applyTheme(); stopRest(); try { idbDo('readwrite', s => s.clear()); } catch (e) {} rerender(); } },
 };
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-a]'); if (!el || !A[el.dataset.a]) return;
@@ -535,7 +542,7 @@ function onInput(e, committed) {
   else if (k === 'rt') { curRoutine()[el.dataset.f] = el.value; save(); }
   else if (k === 'pq') { pickQ = el.value; $('#plist').innerHTML = pickList(allEx().filter(x => !pickQ || fold(x.name + x.g).includes(fold(pickQ)))); }
   else if (k === 'fq') { foodQ = el.value; $('#flist').innerHTML = foodButtons(); }
-  else if (committed && k === 'pf') { const f = el.dataset.f; S.profile[f] = el.dataset.s ? el.value : num(el.value); S.profile.weight = S.profile.weight || 70; save(); rerender(); }
+  else if (committed && k === 'pf') { const f = el.dataset.f; S.profile[f] = el.dataset.s ? el.value : num(el.value); S.profile.weight = S.profile.weight || 70; save(); const t = targets(); if ($('#tg-k')) { $('#tg-k').textContent = t.kcal; $('#tg-t').textContent = t.tdee; $('#tg-p').textContent = t.protein + 'g'; } }
   else if (committed && k === 'photo') {
     const fl = el.files[0]; if (!fl) return; const label = $('#ph-label').value;
     shrink(fl).then(blob => idbDo('readwrite', s => s.put({ id: uid(), date: Date.now(), label, blob }))).then(() => { toast('Đã lưu ảnh'); loadPhotos(); }).catch(() => toast('Không lưu được ảnh'));
@@ -550,6 +557,61 @@ function onInput(e, committed) {
 }
 document.addEventListener('input', e => onInput(e, false));
 document.addEventListener('change', e => onInput(e, true));
+
+/* ---------- Đồng bộ qua GitHub Gist riêng tư ---------- */
+const SK = 'fittrack-sync-v1', GFILE = 'fittrack-data.json', GDESC = 'FitTrack VN sync';
+let SY = (() => { try { return JSON.parse(localStorage.getItem(SK)) || {}; } catch (e) { return {}; } })();
+const saveSY = () => { try { localStorage.setItem(SK, JSON.stringify({ token: SY.token, gistId: SY.gistId, last: SY.last })); } catch (e) {} };
+let syncing = false, pushT = null;
+function schedPush() { if (!SY.token) return; clearTimeout(pushT); pushT = setTimeout(() => syncNow(false), 4000); }
+const GH = async (path, opt = {}) => {
+  const r = await fetch('https://api.github.com' + path, { ...opt, headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + SY.token, 'Content-Type': 'application/json' } });
+  if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
+  return r.json();
+};
+const payload = () => JSON.stringify({ ...S, active: null });
+async function syncNow(manual) {
+  if (!SY.token || syncing) return; syncing = true;
+  try {
+    if (!SY.gistId) {
+      const list = await GH('/gists?per_page=100'); const g = list.find(x => x.description === GDESC && x.files && x.files[GFILE]);
+      if (g) SY.gistId = g.id; else { const c = await GH('/gists', { method: 'POST', body: JSON.stringify({ description: GDESC, public: false, files: { [GFILE]: { content: payload() } } }) }); SY.gistId = c.id; SY.last = Date.now(); SY.msg = 'Đã tạo kho đồng bộ và tải dữ liệu lên'; saveSY(); return; }
+      saveSY();
+    }
+    const g = await GH('/gists/' + SY.gistId), f = g.files && g.files[GFILE]; let remote = null;
+    if (f) remote = JSON.parse(f.truncated ? await (await fetch(f.raw_url)).text() : f.content);
+    const ru = remote ? remote.updated || 0 : 0, lu = S.updated || 0; let pull = false, push = false;
+    if (remote && !SY.last) { // lần đầu kết nối máy này mà đã có dữ liệu trên GitHub
+      if (confirm('Đã có dữ liệu trên GitHub (cập nhật ' + new Date(ru).toLocaleString('vi-VN') + ').\n\nOK = tải về máy này (ghi đè dữ liệu trên máy)\nHuỷ = ghi đè GitHub bằng dữ liệu trên máy này')) pull = true; else push = true;
+    } else if (remote && ru > lu) {
+      if (lu > (SY.last || 0) && !confirm('Cả hai máy đều có thay đổi mới.\n\nOK = dùng dữ liệu từ GitHub (bỏ thay đổi trên máy này)\nHuỷ = giữ dữ liệu máy này và ghi đè GitHub')) push = true; else pull = true;
+    } else if (!remote || lu > ru) push = true;
+    if (pull) {
+      const act = S.active; S = { ...defaults(), ...remote, profile: { ...defaults().profile, ...remote.profile }, remind: { ...defaults().remind, ...remote.remind }, deload: { ...defaults().deload, ...remote.deload }, active: act };
+      try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} applyTheme(); SY.msg = 'Đã tải dữ liệu mới từ GitHub';
+      if (!/^#\/(workout|routine)/.test(location.hash) && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '')) render();
+    } else if (push) {
+      await GH('/gists/' + SY.gistId, { method: 'PATCH', body: JSON.stringify({ files: { [GFILE]: { content: payload() } } }) }); SY.msg = 'Đã đẩy dữ liệu lên GitHub';
+    } else SY.msg = 'Đã đồng bộ, không có thay đổi';
+    SY.last = Date.now(); saveSY();
+  } catch (e) {
+    SY.msg = e.status === 401 ? 'Mã truy cập sai hoặc hết hạn, hãy tạo mã mới.' : e.status === 403 || e.status === 404 ? 'Mã không có quyền gist hoặc kho đồng bộ đã bị xoá.' : 'Chưa đồng bộ được (có thể đang offline). Sẽ thử lại.';
+    if (e.status === 404) { SY.gistId = undefined; saveSY(); }
+  } finally { syncing = false; const el = $('#sy-status'); if (el) el.textContent = syMsg(); }
+}
+const syMsg = () => (SY.msg || '') + (SY.last ? ' · lần cuối ' + new Date(SY.last).toLocaleString('vi-VN') : '');
+function syncCard() {
+  if (SY.token) return `<div class="card"><div class="row"><b class="sp">🟢 Đã bật đồng bộ</b></div><div class="sub" id="sy-status">${esc(syMsg())}</div>
+  <div class="grid2 mt"><button class="btn pri" data-a="syNow">Đồng bộ ngay</button><button class="btn danger" data-a="syOff">Ngắt kết nối</button></div>
+  <div class="sub mt">Dữ liệu được lưu trong một Gist riêng tư của tài khoản GitHub của bạn. Ảnh tiến độ không được đồng bộ. Trên máy khác, dán cùng mã này để kết nối.</div></div>`;
+  return `<div class="card"><div class="sub">Dùng chung dữ liệu giữa máy tính và điện thoại, miễn phí, lưu trong tài khoản GitHub của bạn.</div>
+  <ol class="sub" style="padding-left:18px"><li>Mở <a href="https://github.com/settings/tokens/new?scopes=gist&description=FitTrack%20VN%20sync" target="_blank" rel="noopener" style="text-decoration:underline">trang tạo mã truy cập</a>, đăng nhập GitHub.</li><li>Giữ nguyên quyền <b>gist</b>, chọn hạn dùng (nên "No expiration"), kéo xuống bấm <b>Generate token</b>.</li><li>Sao chép mã (bắt đầu bằng <code>ghp_</code>) và dán vào ô dưới.</li></ol>
+  <input id="sy-token" type="password" placeholder="Dán mã ghp_..." autocomplete="off"><button class="btn pri block mt" data-a="syConnect">Kết nối và đồng bộ</button>
+  <div class="sub mt" id="sy-status">${esc(SY.msg || '')}</div><div class="sub">Mã chỉ lưu trên máy này, không bao giờ nằm trong dữ liệu đồng bộ. Đừng chia sẻ mã cho người khác.</div></div>`;
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) syncNow(false); });
+window.addEventListener('online', () => syncNow(false));
+setTimeout(() => syncNow(false), 800);
 
 let notifT = null;
 function schedNotif() {
