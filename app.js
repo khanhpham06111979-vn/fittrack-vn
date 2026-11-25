@@ -110,7 +110,7 @@ function barChart(items, unit = '') {
 const weeksBack = n => { const base = weekStart(Date.now()); return Array.from({ length: n }, (_, i) => base - (n - 1 - i) * 7 * DAY); };
 
 /* ---------- Giao diện chung ---------- */
-let foodDay = dk(), cardioTab = 'all', progEx = '', foodQ = '', pickCb = null, pickQ = '';
+let foodCat = '', foodDay = dk(), cardioTab = 'all', progEx = '', foodQ = '', pickCb = null, pickQ = '';
 const toast = (m) => { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2200); };
 const modal = html => { const m = $('#modal'); m.innerHTML = `<div class="sheet">${html}</div>`; m.hidden = false; };
 const closeModal = () => { $('#modal').hidden = true; $('#modal').innerHTML = ''; };
@@ -321,8 +321,8 @@ const foodPool = () => [...S.customFoods.map(f => ({ ...f, mine: 1 })), ...FOODS
 let foodSel = null;
 function openFood(name) {
   const f = foodPool().find(x => x.n === name); if (!f) return; foodSel = f;
-  modal(`<h3>${esc(f.n)}</h3><div class="sub">${f.g ? `${round(f.k / f.g * 100)} kcal · ${round(f.p / f.g * 100, 1)}g đạm mỗi 100g (1 khẩu phần ≈ ${f.g}g)` : `${f.k} kcal · ${f.p}g đạm mỗi khẩu phần`}</div>
-  ${f.w ? '<div class="sub">Không có calo, được cộng vào mục nước uống.</div>' : ''}<div class="grid2"><div><label>${f.w ? 'Số ly' : 'Số khẩu phần'}</label><input id="fm-q" inputmode="decimal" data-in="fm" data-f="q" value="1"></div>${f.g ? `<div><label>${f.w ? 'Hoặc nhập ml' : 'Hoặc nhập gam'}</label><input id="fm-g" inputmode="decimal" data-in="fm" data-f="g" value="${f.g}"></div>` : ''}</div>
+  modal(`<h3>${esc(f.n)}</h3><div class="sub">${f.g ? `${round(f.k / f.g * 100)} kcal · ${round(f.p / f.g * 100, 1)}g đạm mỗi 100${f.ml ? 'ml' : 'g'} (1 khẩu phần ≈ ${f.g}${f.ml ? 'ml' : 'g'})` : `${f.k} kcal · ${f.p}g đạm mỗi khẩu phần`}</div>
+  ${f.w ? '<div class="sub">Gần như không calo, được cộng vào mục nước uống.</div>' : ''}${f.alc ? '<div class="hint">Cồn cộng calo "rỗng" và làm chậm phục hồi cơ, nên hạn chế khi đang giảm mỡ hoặc tăng cơ.</div>' : ''}<div class="grid2"><div><label>${f.ml ? 'Số ly/lon/chai' : 'Số khẩu phần'}</label><input id="fm-q" inputmode="decimal" data-in="fm" data-f="q" value="1"></div>${f.g ? `<div><label>${f.ml ? 'Hoặc nhập ml' : 'Hoặc nhập gam'}</label><input id="fm-g" inputmode="decimal" data-in="fm" data-f="g" value="${f.g}"></div>` : ''}</div>
   <div class="stat mt" id="fm-pre"></div><button class="btn pri block mt" data-a="foodAdd">Thêm vào ${dayLabel(foodDay).toLowerCase()}</button><button class="btn ghost block" data-a="closeModal">Đóng</button>`);
   fmUpdate('q');
 }
@@ -331,17 +331,22 @@ function fmUpdate(src) {
   if (g && src === 'q') g.value = round(num(q.value) * f.g); else if (g && src === 'g') q.value = round(num(g.value) / f.g, 2);
   const m = num(q.value); $('#fm-pre').innerHTML = f.w ? `<b>${round(f.g * m)} ml nước</b>` : `<b>${Math.round(f.k * m)} kcal</b><span> · ${round(f.p * m, 1)}g đạm</span>`;
 }
+function foodButtons() {
+  const q = fold(foodQ); let all = foodPool().filter(f => !q || fold(f.n).includes(q));
+  if (foodCat === 'drink') all = all.filter(f => f.ml); else if (foodCat === 'alc') all = all.filter(f => f.alc);
+  const list = (q || foodCat) ? all : all.slice(0, 14);
+  return list.map(f => `<button class="btn sm" data-a="addFood" data-n="${esc(f.n)}" style="margin:3px 3px 0 0">${f.mine ? '⭐ ' : ''}${esc(f.n)} · ${f.k}</button>`).join('') || '<span class="sub">Không có, hãy thêm món riêng bên dưới.</span>';
+}
 function vFood() {
   const t = targets(), tot = foodTotal(foodDay), items = foodOf(foodDay), wt = S.water[foodDay] || 0, isToday = foodDay === dk();
-  const q = fold(foodQ), all = foodPool().filter(f => !q || fold(f.n).includes(q));
-  const shown = (q ? all : all.slice(0, 14)).map(f => `<button class="btn sm" data-a="addFood" data-n="${esc(f.n)}" style="margin:3px 3px 0 0">${f.mine ? '⭐ ' : ''}${esc(f.n)} · ${f.k}</button>`).join('');
+  const shown = foodButtons();
   return `${head('Ăn uống')}<div class="row"><button class="btn sm" data-a="dayPrev">‹</button><b class="sp" style="text-align:center">${dayLabel(foodDay)}</b><button class="btn sm" data-a="dayNext" ${isToday ? 'disabled style="opacity:.4"' : ''}>›</button></div>
   <div class="card"><div class="row"><b style="font-size:24px">${Math.round(tot.k)}</b><span class="sub">/ ${t.kcal} kcal</span><span class="sp"></span><span class="sub">còn ${Math.max(0, Math.round(t.kcal - tot.k))}</span></div>
   <div class="bar"><i class="${tot.k > t.kcal * 1.1 ? 'over' : ''}" style="width:${Math.min(100, tot.k / t.kcal * 100)}%"></i></div>
   <div class="row"><b>${Math.round(tot.p)}g</b><span class="sub">/ ${t.protein}g đạm</span></div><div class="bar"><i style="width:${Math.min(100, tot.p / t.protein * 100)}%"></i></div>
   <div class="row"><b>${wt} ml</b><span class="sub">/ ${t.water * 1} ml nước</span><span class="sp"></span><button class="btn sm" data-a="water" data-v="250">+250</button><button class="btn sm" data-a="water" data-v="-250">−</button></div><div class="bar"><i style="width:${Math.min(100, wt / t.water * 100)}%"></i></div></div>
-  <h2>Đã ăn</h2><div class="card">${items.map((f, i) => `<div class="item"><div class="sp"><b>${esc(f.n)}</b><div class="sub">${Math.round(f.k * f.q)} kcal · ${round(f.p * f.q, 1)}g đạm</div></div><button class="btn sm" data-a="qty" data-i="${i}" data-v="-0.5">−</button><b>${f.gr ? f.gr + ' g' : round(f.q, 2)}</b><button class="btn sm" data-a="qty" data-i="${i}" data-v="0.5">+</button><button class="x" data-a="delFood" data-i="${i}">✕</button></div>`).join('') || '<div class="empty">Chưa ghi món nào.</div>'}</div>
-  <h2>Thêm món</h2><div class="card"><input id="fq" data-in="fq" placeholder="Tìm: cơm, phở, ức gà..." value="${esc(foodQ)}"><div id="flist" class="mt">${shown || '<span class="sub">Không có, hãy thêm món riêng bên dưới.</span>'}</div>
+  <h2>Đã ăn</h2><div class="card">${items.map((f, i) => `<div class="item"><div class="sp"><b>${esc(f.n)}</b><div class="sub">${Math.round(f.k * f.q)} kcal · ${round(f.p * f.q, 1)}g đạm</div></div><button class="btn sm" data-a="qty" data-i="${i}" data-v="-0.5">−</button><b>${f.gr ? f.gr + (f.ml ? ' ml' : ' g') : round(f.q, 2)}</b><button class="btn sm" data-a="qty" data-i="${i}" data-v="0.5">+</button><button class="x" data-a="delFood" data-i="${i}">✕</button></div>`).join('') || '<div class="empty">Chưa ghi món nào.</div>'}</div>
+  <h2>Thêm món</h2><div class="card"><div class="tabs">${[['', 'Gợi ý'], ['drink', '🥤 Đồ uống'], ['alc', '🍺 Rượu bia'], ['all', 'Tất cả']].map(c => `<button class="btn sm ${foodCat === c[0] ? 'on' : ''}" data-a="cat" data-c="${c[0]}">${c[1]}</button>`).join('')}</div><input id="fq" data-in="fq" placeholder="Tìm: cơm, phở, ức gà..." value="${esc(foodQ)}"><div id="flist" class="mt">${shown}</div>
   <label>Món riêng</label><input id="f-n" placeholder="Tên món"><div class="grid3"><div><label>kcal</label><input id="f-k" inputmode="decimal"></div><div><label>Đạm (g)</label><input id="f-p" inputmode="decimal"></div><div><label>Gam/phần</label><input id="f-g" inputmode="decimal" placeholder="tuỳ chọn"></div></div><button class="btn block mt" data-a="addCustomFood">Thêm món này</button></div>
   ${S.customFoods.length ? `<h2>Món của tôi</h2><div class="card">${S.customFoods.map((f, i) => `<div class="item"><div class="sp"><b>${esc(f.n)}</b><div class="sub">${f.k} kcal · ${f.p}g đạm</div></div><button class="x" data-a="delCustomFood" data-i="${i}">✕</button></div>`).join('')}</div>` : ''}<div class="sub">Số liệu calo/đạm là ước tính theo khẩu phần phổ biến. Điều chỉnh theo thực tế của bạn.</div>`;
 }
@@ -458,11 +463,12 @@ const A = {
   addFood(el) {
     openFood(el.dataset.n);
   },
+  cat(el) { foodCat = el.dataset.c; rerender(); },
   foodAdd() {
-    const f = foodSel, q = num($('#fm-q').value); if (!f || q <= 0) return toast('Nhập số lượng');
+    const f = foodSel, gi = $('#fm-g'); let q = gi ? num(gi.value) / f.g : num($('#fm-q').value); if (!f || q <= 0) return toast('Nhập số lượng');
     if (f.w) { S.water[foodDay] = (S.water[foodDay] || 0) + Math.round(q * f.g); save(); closeModal(); toast('Đã cộng ' + Math.round(q * f.g) + ' ml nước'); rerender(); return; }
     const l = (S.food[foodDay] = S.food[foodDay] || []), ex = l.find(x => x.n === f.n && !!x.sg === !!f.g);
-    if (ex) { ex.q = round(ex.q + q, 3); if (ex.sg) ex.gr = round(ex.q * ex.sg); } else l.push({ n: f.n, k: f.k, p: f.p, q: round(q, 3), ...(f.g ? { sg: f.g, gr: round(q * f.g) } : {}) });
+    if (ex) { ex.q = round(ex.q + q, 3); if (ex.sg) ex.gr = round(ex.q * ex.sg); } else l.push({ n: f.n, k: f.k, p: f.p, q: round(q, 4), ...(f.g ? { sg: f.g, gr: round(q * f.g), ...(f.ml ? { ml: 1 } : {}) } : {}) });
     save(); closeModal(); toast('Đã thêm'); rerender();
   },
   addCustomFood() {
@@ -528,7 +534,7 @@ function onInput(e, committed) {
   else if (k === 'fm') fmUpdate(el.dataset.f);
   else if (k === 'rt') { curRoutine()[el.dataset.f] = el.value; save(); }
   else if (k === 'pq') { pickQ = el.value; $('#plist').innerHTML = pickList(allEx().filter(x => !pickQ || fold(x.name + x.g).includes(fold(pickQ)))); }
-  else if (k === 'fq') { foodQ = el.value; const q = fold(foodQ), all = foodPool().filter(f => !q || fold(f.n).includes(q)); $('#flist').innerHTML = (q ? all : all.slice(0, 14)).map(f => `<button class="btn sm" data-a="addFood" data-n="${esc(f.n)}" style="margin:3px 3px 0 0">${f.mine ? '⭐ ' : ''}${esc(f.n)} · ${f.k}</button>`).join('') || '<span class="sub">Không có, hãy thêm món riêng bên dưới.</span>'; }
+  else if (k === 'fq') { foodQ = el.value; $('#flist').innerHTML = foodButtons(); }
   else if (committed && k === 'pf') { const f = el.dataset.f; S.profile[f] = el.dataset.s ? el.value : num(el.value); S.profile.weight = S.profile.weight || 70; save(); rerender(); }
   else if (committed && k === 'photo') {
     const fl = el.files[0]; if (!fl) return; const label = $('#ph-label').value;
