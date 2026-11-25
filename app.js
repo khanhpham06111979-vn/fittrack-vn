@@ -149,6 +149,7 @@ function vHome() {
     <div class="row mt"><button class="btn" data-a="start" data-id="${nx.id}">Bắt đầu</button><a class="btn" href="#/train" style="background:transparent;color:var(--acc-ink);border:1px solid var(--acc-ink)">Chọn buổi khác</a></div></div>`;
   }
   return `<div class="sub">${hi}${p.name ? ', ' + esc(p.name) : ''}</div><h1>Hôm nay</h1>${top}
+  ${todayCard()}
   <h2>Tuần này</h2><div class="card"><div class="row"><div class="dots">${dots}</div><span class="sp"></span><b>${w.sessions}/${p.weeklyGoal} buổi tạ</b></div>
   <div class="sub mt">Chạy/cardio: ${round(w.km, 1)} km · ${Math.round(w.cardioMin)} phút · Chuỗi tuần đạt mục tiêu: ${weekStreak()} 🔥</div></div>
   <h2>Dinh dưỡng hôm nay</h2><a class="card" href="#/food" style="display:block"><div class="row"><b>${Math.round(ft.k)}</b><span class="sub">/ ${t.kcal} kcal</span><span class="sp"></span><b>${Math.round(ft.p)}</b><span class="sub">/ ${t.protein}g đạm</span></div>
@@ -156,6 +157,21 @@ function vHome() {
   <div class="grid2"><a class="stat" href="#/body"><b>${cur ? cur + ' kg' : '—'}</b><span>Cân nặng${diff !== null ? ' · ' + (diff > 0 ? '+' : '') + diff + ' kg/4 tuần' : ''}</span></a>
   <a class="stat" href="#/cardio"><b>+ Cardio</b><span>Ghi buổi chạy</span></a></div>
   <div class="card mt"><div class="sub">💡 Gợi ý</div>${esc(tip)}</div>`;
+}
+
+function todayCard() {
+  const k = dk(), ss = S.sessions.filter(x => dk(x.date) === k), cs = S.cardio.filter(x => dk(x.date) === k), fs = foodOf(k), wt = S.water[k] || 0, bd = S.body.filter(x => dk(x.date) === k);
+  const ft = foodTotal(k), tm = t => { const n = new Date(t); return String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'); };
+  const row = (ok, label, detail) => `<div class="item" style="padding:9px 0"><span style="font-size:18px">${ok ? '✅' : '⬜'}</span><div class="sp"><b>${label}</b>${detail ? `<div class="sub">${detail}</div>` : ''}</div></div>`;
+  const sorted = [...fs].sort((a, b) => (a.t || '99').localeCompare(b.t || '99'));
+  const meals = sorted.slice(0, 4).map(f => `${f.t ? f.t + ' ' : ''}${esc(f.n.replace(/ \(.*/, ''))}`).join(' · ') + (sorted.length > 4 ? ` · +${sorted.length - 4} món` : '');
+  return `<h2>Hôm nay đã ghi nhận</h2><div class="card" style="padding:6px 16px">
+  ${row(ss.length, 'Tập tạ', ss.map(x => `${esc(x.name)} lúc ${tm(x.date)} · ${Math.round(x.dur / 60)} phút · ${Math.round(x.vol)} kg tổng tạ`).join('<br>') || 'Chưa có buổi nào hôm nay')}
+  ${row(fs.length, 'Ăn uống', fs.length ? `${fs.length} món · ${Math.round(ft.k)} kcal · ${Math.round(ft.p)}g đạm<br>${meals}` : 'Chưa ghi món nào')}
+  ${row(wt > 0, 'Nước uống', wt ? wt + ' ml' : 'Chưa ghi')}
+  ${row(cs.length, 'Cardio', cs.map(x => (x.km ? round(x.km, 1) + ' km · ' : '') + x.min + ' phút').join(', ') || 'Chưa ghi')}
+  ${row(bd.length, 'Cân nặng', bd.length ? bd.map(x => x.weight ? x.weight + ' kg' : 'đã đo').join(', ') : 'Chưa cân hôm nay')}
+  ${SY.token ? `<div class="sub" style="padding:8px 0">☁️ Đồng bộ GitHub: ${esc(SY.last ? 'lần cuối ' + new Date(SY.last).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'chưa đồng bộ')}</div>` : ''}</div>`;
 }
 
 /* ---------- Tập luyện ---------- */
