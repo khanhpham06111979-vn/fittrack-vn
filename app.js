@@ -22,12 +22,16 @@ const defaults = () => ({
   profile: { name: '', sex: 'm', age: 30, height: 170, weight: 70, goalWeight: 0, goal: 'recomp', activity: 1.375, weeklyGoal: 3, rest: 90, accent: '#B7E21E', mode: 'auto' },
   remind: { on: false, days: [1, 3, 5], time: '18:00' }, deload: { on: false, start: 0, last: 0, every: 6 }, customFoods: [],
   routines: JSON.parse(JSON.stringify(DEFAULT_ROUTINES)), customEx: [],
-  sessions: [], cardio: [], body: [], food: {}, water: {}, active: null, updated: 0, health: { records: [], imaging: [], notes: [], recheck: '' }, reportSeen: '',
+  sessions: [], cardio: [], body: [], food: {}, water: {}, active: null, updated: 0, health: { records: [], imaging: [], notes: [], recheck: '' }, reportSeen: '', waterLog: {}, seeded: ['home'],
 });
-let S = load();
+let S = load(); migrate();
 function load() {
-  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d) { const b = defaults(); return { ...b, ...d, profile: { ...b.profile, ...d.profile }, remind: { ...b.remind, ...d.remind }, deload: { ...b.deload, ...d.deload }, health: { ...b.health, ...d.health } }; } } catch (e) {}
+  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d) { const b = defaults(); return { ...b, ...d, profile: { ...b.profile, ...d.profile }, remind: { ...b.remind, ...d.remind }, deload: { ...b.deload, ...d.deload }, health: { ...b.health, ...d.health }, seeded: d.seeded || [] }; } } catch (e) {}
   return defaults();
+}
+function migrate() {
+  S.seeded = S.seeded || [];
+  if (!S.seeded.includes('home')) { const h = DEFAULT_ROUTINES.find(r => r.id === 'home'); if (h && !S.routines.some(r => r.id === 'home')) S.routines.push(JSON.parse(JSON.stringify(h))); S.seeded.push('home'); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 }
 function save() { S.updated = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} schedPush(); }
 
@@ -181,7 +185,7 @@ function vTrain() {
     return `<div class="card"><div class="row"><div class="sp"><h3>${esc(r.name)}</h3><div class="sub">${esc(r.sub || '')} · ${r.ex.length} bài${ds === null ? '' : ' · ' + (ds === 0 ? 'hôm nay' : ds + ' ngày trước')}</div></div>
     <a class="btn sm" href="#/routine/${r.id}">Sửa</a><button class="btn pri sm" data-a="start" data-id="${r.id}">Tập</button></div></div>`;
   }).join('');
-  const hist = [...S.sessions].reverse().slice(0, 8).map(s => `<div class="item"><div class="sp"><b>${esc(s.name)}</b><div class="sub">${fmtD(s.date)} · ${Math.round(s.dur / 60)} phút · ${Math.round(s.vol)} kg tổng tạ${s.feel ? ' · ' + ['😫', '😐', '🙂', '💪'][s.feel - 1] : ''}</div>${s.note ? `<div class="sub">📝 ${esc(s.note)}</div>` : ''}</div><button class="x" data-a="delSession" data-id="${s.id}" aria-label="Xoá">✕</button></div>`).join('');
+  const hist = [...S.sessions].reverse().slice(0, 8).map(s => `<div class="item"><div class="sp"><b>${esc(s.name)}</b><div class="sub">${fmtD(s.date)} ${new Date(s.date).toTimeString().slice(0, 5)} · ${Math.round(s.dur / 60)} phút · ${Math.round(s.vol)} kg tổng tạ${s.feel ? ' · ' + ['😫', '😐', '🙂', '💪'][s.feel - 1] : ''}</div>${s.note ? `<div class="sub">📝 ${esc(s.note)}</div>` : ''}<input type="datetime-local" class="tin" data-in="stime" data-id="${s.id}" value="${dtl(s.date)}" max="${dtl(Date.now())}" aria-label="Giờ bắt đầu"></div><button class="x" data-a="delSession" data-id="${s.id}" aria-label="Xoá">✕</button></div>`).join('');
   return `${head('Tập luyện')}${S.active ? `<div class="banner row"><span class="sp"><b>Đang tập: ${esc(S.active.name)}</b></span><a class="btn pri sm" href="#/workout">Tiếp tục</a></div>` : ''}
   <div class="sub">Tập lúc nào rảnh cũng được: app gợi ý buổi kế tiếp theo vòng Đẩy → Kéo → Chân.</div>${rs}
   <a class="btn block mt" href="#/routine/new">+ Tạo buổi tập mới</a>
@@ -198,7 +202,7 @@ function startRoutine(id) {
 function buildEx(id, n = 3) {
   const ex = exOf(id), last = lastSessionOf(id); let sets;
   if (last) sets = last.sets.map(s => ({ w: s.w, r: s.r, done: false }));
-  else sets = Array.from({ length: n }, () => ({ w: 0, r: ex.type === 'time' ? ex.min : ex.min, done: false }));
+  else sets = Array.from({ length: n }, () => ({ w: ex.w0 || 0, r: ex.min, done: false }));
   while (sets.length < n) sets.push({ ...sets[sets.length - 1], done: false });
   sets = sets.slice(0, Math.max(n, 1));
   // Gợi ý tăng tạ nếu lần trước đạt hết mức reps cao nhất
@@ -208,7 +212,8 @@ function buildEx(id, n = 3) {
     sets = sets.slice(0, Math.max(2, n - 1)); sets.forEach(s => s.r = Math.min(s.r, ex.max));
     hint = 'Tuần nhẹ: tạ giảm ~10%, bớt 1 set, dừng cách giới hạn 3–4 reps.';
   } else if (last && ex.type !== 'time' && last.sets.every(s => s.r >= ex.max)) {
-    if (ex.type === 'machine') { const inc = 2.5; sets.forEach(s => { s.w = round(s.w + inc, 1); s.r = ex.min; }); hint = `Lần trước đạt ${ex.max} reps ở mọi set: thử tăng lên ${sets[0].w} kg.`; }
+    if (ex.fixed) hint = `Lần trước đạt ${ex.max} reps: tăng độ khó bằng nhịp chậm hơn, giữ 1–2 giây ở điểm ép tối đa, hoặc thêm một set.`;
+    else if (ex.type === 'machine') { const inc = 2.5; sets.forEach(s => { s.w = round(s.w + inc, 1); s.r = ex.min; }); hint = `Lần trước đạt ${ex.max} reps ở mọi set: thử tăng lên ${sets[0].w} kg.`; }
     else hint = `Lần trước đạt ${ex.max} reps: thử thêm tạ hoặc chọn biến thể khó hơn.`;
   }
   return { id, sets, hint };
@@ -221,7 +226,7 @@ function vWorkout() {
     const lastTxt = last ? last.sets.map(s => tm ? s.r + 's' : (s.w ? s.w + '×' : '') + s.r).join(' · ') : 'chưa có dữ liệu';
     return `<div class="card"><div class="row"><div class="sp"><h3>${esc(ex.name)}</h3><div class="sub">${esc(ex.g)} · mục tiêu ${ex.min}–${ex.max}${tm ? ' giây' : ' reps'}</div></div><button class="x" data-a="rmEx" data-i="${i}" aria-label="Bỏ bài">🗑</button></div>
     <div class="sub mt">Lần trước: ${esc(lastTxt)}</div>${e.hint ? `<div class="hint">⬆ ${esc(e.hint)}</div>` : ''}
-    <details><summary class="sub" style="cursor:pointer">Cách tập</summary><div class="sub">${esc(ex.cue || '')}</div></details>
+    <details><summary class="sub" style="cursor:pointer">Cách tập</summary>${ex.img ? `<img src="${ex.img}" alt="${esc(ex.name)}" style="width:100%;max-width:240px;border-radius:12px;margin:8px 0;display:block" loading="lazy">` : ''}<div class="sub">${esc(ex.cue || '')}</div></details>
     <div class="setrow ${tm ? 'time' : ''} sub"><span></span>${tm ? '' : '<span>kg</span>'}<span>${tm ? 'giây' : 'reps'}</span><span></span><span></span></div>
     ${e.sets.map((s, j) => `<div class="setrow ${tm ? 'time' : ''}"><span class="n">${j + 1}</span>
       ${tm ? '' : `<input inputmode="decimal" data-in="ws" data-i="${i}" data-j="${j}" data-f="w" value="${s.w || ''}" placeholder="0">`}
@@ -340,6 +345,7 @@ function vBodyPhotos() {
 
 /* ---------- Ăn uống ---------- */
 const fold = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
+function waterAdd(ml, t, day = foodDay) { S.water[day] = Math.max(0, (S.water[day] || 0) + ml); (S.waterLog[day] = S.waterLog[day] || []).push({ id: uid(), t, ml }); }
 const foodPool = () => [...S.customFoods.map(f => ({ ...f, mine: 1 })), ...FOODS];
 let foodSel = null;
 function openFood(name) {
@@ -367,7 +373,7 @@ function vFood() {
   <div class="card"><div class="row"><b style="font-size:24px">${Math.round(tot.k)}</b><span class="sub">/ ${t.kcal} kcal</span><span class="sp"></span><span class="sub">còn ${Math.max(0, Math.round(t.kcal - tot.k))}</span></div>
   <div class="bar"><i class="${tot.k > t.kcal * 1.1 ? 'over' : ''}" style="width:${Math.min(100, tot.k / t.kcal * 100)}%"></i></div>
   <div class="row"><b>${Math.round(tot.p)}g</b><span class="sub">/ ${t.protein}g đạm</span></div><div class="bar"><i style="width:${Math.min(100, tot.p / t.protein * 100)}%"></i></div>
-  <div class="row"><b>${wt} ml</b><span class="sub">/ ${t.water * 1} ml nước</span><span class="sp"></span><button class="btn sm" data-a="water" data-v="250">+250</button><button class="btn sm" data-a="water" data-v="-250">−</button></div><div class="bar"><i style="width:${Math.min(100, wt / t.water * 100)}%"></i></div></div>
+  <div class="row"><b>${wt} ml</b><span class="sub">/ ${t.water * 1} ml nước</span><span class="sp"></span><button class="btn sm" data-a="water" data-v="250">+250</button><button class="btn sm" data-a="water" data-v="-250">−</button></div><div class="bar"><i style="width:${Math.min(100, wt / t.water * 100)}%"></i></div>${(() => { const wl = [...(S.waterLog[foodDay] || [])].sort((a, b) => a.t.localeCompare(b.t)), rest = wt - wl.reduce((u, w) => u + w.ml, 0); return wl.length || rest > 0 ? `<div class="mt">${wl.map(w => `<div class="row" style="padding:3px 0"><input type="time" class="tin" data-in="wtime" data-id="${w.id}" value="${w.t}"><b>${w.ml} ml</b><span class="sp"></span><button class="x" data-a="waterDel" data-id="${w.id}" aria-label="Xoá">✕</button></div>`).join('')}${rest > 0 ? `<div class="sub">Ngoài ra ${rest} ml chưa ghi giờ</div>` : ''}</div>` : ''; })()}</div>
   <h2>Đã ăn</h2><div class="card">${items.map((f, i) => ({ f, i })).sort((a, b) => (a.f.t || '99').localeCompare(b.f.t || '99')).map(({ f, i }) => `<div class="item"><div class="sp"><b>${esc(f.n)}</b><div class="sub">${Math.round(f.k * f.q)} kcal · ${round(f.p * f.q, 1)}g đạm</div><input type="time" class="tin" data-in="ftime" data-i="${i}" value="${f.t || ''}" aria-label="Giờ ăn"></div><button class="btn sm" data-a="qty" data-i="${i}" data-v="-0.5">−</button><b>${f.gr ? f.gr + (f.ml ? ' ml' : ' g') : round(f.q, 2)}</b><button class="btn sm" data-a="qty" data-i="${i}" data-v="0.5">+</button><button class="x" data-a="delFood" data-i="${i}">✕</button></div>`).join('') || '<div class="empty">Chưa ghi món nào.</div>'}</div>
   <h2>Thêm món</h2><div class="card"><div class="tabs">${[['', 'Gợi ý'], ['drink', '🥤 Đồ uống'], ['alc', '🍺 Rượu bia'], ['all', 'Tất cả']].map(c => `<button class="btn sm ${foodCat === c[0] ? 'on' : ''}" data-a="cat" data-c="${c[0]}">${c[1]}</button>`).join('')}</div><input id="fq" data-in="fq" placeholder="Tìm: cơm, phở, ức gà..." value="${esc(foodQ)}"><div id="flist" class="mt">${shown}</div>
   <label>Món riêng</label><input id="f-n" placeholder="Tên món"><div class="grid3"><div><label>kcal</label><input id="f-k" inputmode="decimal"></div><div><label>Đạm (g)</label><input id="f-p" inputmode="decimal"></div><div><label>Gam/phần</label><input id="f-g" inputmode="decimal" placeholder="tuỳ chọn"></div></div><button class="btn block mt" data-a="addCustomFood">Thêm món này</button></div>
@@ -431,7 +437,30 @@ function vTiming() {
   const lk = cnt < 3 ? '<div class="empty">Cần ít nhất 3 ngày vừa có buổi tập vừa có ghi giờ ăn.</div>'
     : `<div class="card"><div class="grid2"><div class="stat"><b>${Math.round(pre / cnt * 100)}%</b><span>có bữa ăn 0,5–3 giờ trước tập</span></div><div class="stat"><b>${Math.round(post / cnt * 100)}%</b><span>có ≥20g đạm trong 2 giờ sau tập</span></div></div>
     <div class="hint">${post / cnt < .6 ? 'Hãy bổ sung bữa giàu đạm (20–40g) trong 2 giờ sau tập để hỗ trợ phục hồi cơ. ' : ''}${pre / cnt < .6 ? 'Ăn nhẹ có tinh bột (chuối, yến mạch, cơm) 1–2 giờ trước tập giúp bạn có sức hơn.' : ''}${post / cnt >= .6 && pre / cnt >= .6 ? 'Bạn đang ăn trước và sau tập khá tốt, hãy duy trì.' : ''}</div><div class="sub">Dựa trên ${cnt} buổi tập trong 60 ngày qua.</div></div>`;
-  return `<h2>Phân tích: giờ tập</h2>${wk}<h2>Phân tích: giờ ăn</h2>${fd}<h2>Ăn uống quanh buổi tập</h2>${lk}`;
+  // Nước uống
+  const nowT0 = Date.now(), wdays = Object.keys(S.waterLog || {}).filter(k => k >= dk(nowT0 - 14 * DAY)).map(k => ({ k, l: [...S.waterLog[k]].sort((a, b) => a.t.localeCompare(b.t)) })).filter(x => x.l.length);
+  let wt;
+  if (wdays.length < 3) wt = `<div class="empty">Ghi nước kèm giờ trong ít nhất 3 ngày để xem nhịp uống nước (hiện có ${wdays.length} ngày).</div>`;
+  else {
+    const mlB = {}; BANDS.forEach(b => mlB[b] = 0); wdays.forEach(x => x.l.forEach(w => { mlB[hband(Math.floor(hm(w.t) / 60))] += w.ml; }));
+    const tot = BANDS.reduce((t, b) => t + mlB[b], 0), pcw = b => Math.round(mlB[b] / tot * 100);
+    const gaps = wdays.filter(x => x.l.length >= 2).map(x => Math.max(...x.l.slice(1).map((w, i) => hm(w.t) - hm(x.l[i].t)))), avgGap = gaps.length ? avgOf(gaps) : 0, perDay = avgOf(wdays.map(x => x.l.length)), mlDay = tot / wdays.length;
+    const notes = [];
+    if (avgGap >= 240) notes.push(`Khoảng cách dài nhất giữa hai lần uống trung bình ${round(avgGap / 60, 1)} giờ. Nên uống rải đều, mỗi 1–2 giờ một ly nhỏ, thay vì dồn một lúc.`);
+    if (pcw('Tối') + pcw('Khuya') >= 40) notes.push(`${pcw('Tối') + pcw('Khuya')}% lượng nước uống sau 18h. Dồn nước về tối dễ phải thức giấc đi vệ sinh, hãy uống nhiều hơn từ sáng đến chiều.`);
+    if (pcw('Sáng') < 15) notes.push('Buổi sáng uống ít nước. Một ly nước sau khi thức dậy giúp bù nước sau một đêm.');
+    if (!notes.length) notes.push('Nhịp uống nước khá đều trong ngày.');
+    wt = `<div class="card">${barChart(BANDS.map(b => ({ label: b, v: pcw(b), cur: mlB[b] === Math.max(...BANDS.map(x => mlB[x])) })), '%')}<div class="grid2"><div class="stat"><b>${Math.round(mlDay)}</b><span>ml/ngày (14 ngày)</span></div><div class="stat"><b>${round(perDay, 1)}</b><span>lần uống/ngày</span></div></div>${notes.map(n => `<div class="hint">${esc(n)}</div>`).join('')}</div>`;
+  }
+  let wpre = 0, wdur = 0, wc = 0;
+  S.sessions.filter(x => x.date >= nowT0 - 60 * DAY).forEach(x => {
+    const l = S.waterLog[dk(x.date)]; if (!l || !l.length) return; wc++;
+    const d = new Date(x.date), st = d.getHours() * 60 + d.getMinutes(), en = st + Math.round(x.dur / 60);
+    if (l.filter(w => { const m = hm(w.t); return m >= st - 120 && m <= st; }).reduce((u, w) => u + w.ml, 0) >= 250) wpre++;
+    if (l.filter(w => { const m = hm(w.t); return m > st && m <= en + 60; }).reduce((u, w) => u + w.ml, 0) >= 250) wdur++;
+  });
+  const wl2 = wc >= 3 ? `<div class="card"><div class="grid2"><div class="stat"><b>${Math.round(wpre / wc * 100)}%</b><span>có uống ≥250ml trong 2 giờ trước tập</span></div><div class="stat"><b>${Math.round(wdur / wc * 100)}%</b><span>có uống ≥250ml trong lúc và 1 giờ sau tập</span></div></div>${wpre / wc < .6 || wdur / wc < .6 ? '<div class="hint">Hãy uống một ly nước trước khi tập và nhấp từng ngụm giữa các set, nhất là khi acid uric cao hoặc trời nóng.</div>' : '<div class="hint">Bạn bù nước quanh buổi tập khá tốt.</div>'}<div class="sub">Dựa trên ${wc} buổi tập có ghi nước cùng ngày.</div></div>` : '';
+  return `<h2>Phân tích: giờ tập</h2>${wk}<h2>Phân tích: giờ ăn</h2>${fd}<h2>Ăn uống quanh buổi tập</h2>${lk}<h2>Phân tích: giờ uống nước</h2>${wt}${wl2}`;
 }
 
 /* ---------- Phân tích chuyên sâu ---------- */
@@ -759,7 +788,7 @@ function vReport(key) {
 /* ---------- Thư viện bài ---------- */
 function vExercises() {
   const groups = {}; allEx().forEach(e => (groups[e.g] = groups[e.g] || []).push(e));
-  return `${head('Thư viện bài tập', '#/train')}${Object.entries(groups).map(([g, l]) => `<h2>${esc(g)}</h2><div class="card">${l.map(e => `<div class="item"><div class="sp"><b>${esc(e.name)}</b><div class="sub">${esc(e.cue || '')}</div></div><span class="chip">${e.min}–${e.max}</span></div>`).join('')}</div>`).join('')}
+  return `${head('Thư viện bài tập', '#/train')}${Object.entries(groups).map(([g, l]) => `<h2>${esc(g)}</h2><div class="card">${l.map(e => `<div class="item">${e.img ? `<img src="${e.img}" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:10px" loading="lazy">` : ''}<div class="sp"><b>${esc(e.name)}</b><div class="sub">${esc(e.cue || '')}</div></div><span class="chip">${e.min}–${e.max}</span></div>`).join('')}</div>`).join('')}
   <h2>Thêm bài riêng</h2><div class="card"><label>Tên bài</label><input id="x-n"><label>Nhóm cơ</label><input id="x-g" placeholder="vd Ngực"><label>Loại</label><select id="x-t"><option value="machine">Có tạ (kg)</option><option value="bw">Tạ cơ thể</option><option value="time">Tính giây</option></select><button class="btn pri block mt" data-a="addEx2">Thêm</button></div>`;
 }
 
@@ -857,7 +886,7 @@ const A = {
   cat(el) { foodCat = el.dataset.c; rerender(); },
   foodAdd() {
     const f = foodSel, gi = $('#fm-g'); let q = gi ? num(gi.value) / f.g : num($('#fm-q').value); if (!f || q <= 0) return toast('Nhập số lượng');
-    if (f.w) { S.water[foodDay] = (S.water[foodDay] || 0) + Math.round(q * f.g); save(); closeModal(); toast('Đã cộng ' + Math.round(q * f.g) + ' ml nước'); rerender(); return; }
+    if (f.w) { waterAdd(Math.round(q * f.g), $('#fm-t').value || nowT()); save(); closeModal(); toast('Đã cộng ' + Math.round(q * f.g) + ' ml nước'); rerender(); return; }
     const l = (S.food[foodDay] = S.food[foodDay] || []), t = $('#fm-t').value || nowT(), ex = l.find(x => x.n === f.n && !!x.sg === !!f.g && x.t === t);
     if (ex) { ex.q = round(ex.q + q, 3); if (ex.sg) ex.gr = round(ex.q * ex.sg); } else l.push({ n: f.n, k: f.k, p: f.p, t, ...(f.pur ? { pur: 1 } : {}), ...(f.alc ? { alc: 1 } : {}), q: round(q, 4), ...(f.g ? { sg: f.g, gr: round(q * f.g), ...(f.ml ? { ml: 1 } : {}) } : {}) });
     save(); closeModal(); toast('Đã thêm'); rerender();
@@ -869,7 +898,13 @@ const A = {
   delCustomFood(el) { S.customFoods.splice(+el.dataset.i, 1); save(); rerender(); },
   qty(el) { const f = foodOf(foodDay)[+el.dataset.i], dir = +el.dataset.v > 0 ? 1 : -1; if (f.sg) { f.gr = Math.max(10, (f.gr || round(f.q * f.sg)) + dir * 10); f.q = f.gr / f.sg; } else f.q = Math.max(.5, f.q + dir * .5); save(); rerender(); },
   delFood(el) { foodOf(foodDay).splice(+el.dataset.i, 1); save(); rerender(); },
-  water(el) { S.water[foodDay] = Math.max(0, (S.water[foodDay] || 0) + +el.dataset.v); save(); rerender(); },
+  water(el) {
+    const v = +el.dataset.v;
+    if (v > 0) waterAdd(v, foodDay === dk() ? nowT() : '12:00');
+    else { const l = S.waterLog[foodDay] || []; if (l.length) { const w = l.pop(); S.water[foodDay] = Math.max(0, (S.water[foodDay] || 0) - w.ml); } else S.water[foodDay] = Math.max(0, (S.water[foodDay] || 0) + v); }
+    save(); rerender();
+  },
+  waterDel(el) { const l = S.waterLog[foodDay] || [], i = l.findIndex(w => w.id === el.dataset.id); if (i < 0) return; S.water[foodDay] = Math.max(0, (S.water[foodDay] || 0) - l[i].ml); l.splice(i, 1); save(); rerender(); },
   dayPrev() { foodDay = dk(new Date(foodDay + 'T12:00').getTime() - DAY); rerender(); },
   dayNext() { if (foodDay < dk()) { foodDay = dk(new Date(foodDay + 'T12:00').getTime() + DAY); rerender(); } },
   addEx2() {
@@ -963,6 +998,8 @@ function onInput(e, committed) {
     const fl = el.files[0]; if (!fl) return; const label = $('#ph-label').value;
     shrink(fl).then(blob => idbDo('readwrite', s => s.put({ id: uid(), date: Date.now(), label, blob }))).then(() => { toast('Đã lưu ảnh'); loadPhotos(); }).catch(() => toast('Không lưu được ảnh'));
   }
+  else if (committed && k === 'stime') { const x = S.sessions.find(y => y.id === el.dataset.id), v = new Date(el.value).getTime(); if (x && v && v <= Date.now() + 60000) { x.date = v; S.sessions.sort((a, b) => a.date - b.date); save(); rerender(); } }
+  else if (committed && k === 'wtime') { const w = (S.waterLog[foodDay] || []).find(x => x.id === el.dataset.id); if (w && el.value) { w.t = el.value; save(); } }
   else if (committed && k === 'wstart') { const v = new Date(el.value).getTime(); if (v && v <= Date.now() + 60000 && S.active) { S.active.start = v; save(); } }
   else if (committed && k === 'ftime') { const f = foodOf(foodDay)[+el.dataset.i]; if (f && el.value) { f.t = el.value; save(); } }
   else if (committed && k === 'hMarker') { window.__hm = el.value; rerender(); }
@@ -986,7 +1023,7 @@ function onInput(e, committed) {
   else if (committed && k === 'progEx') { progEx = el.value; rerender(); }
   else if (committed && k === 'import') {
     const fl = el.files[0]; if (!fl) return; const r = new FileReader();
-    r.onload = () => { try { const d = JSON.parse(r.result); if (!d.profile || !d.sessions) throw 0; S = { ...defaults(), ...d, health: { ...defaults().health, ...d.health } }; save(); applyTheme(); toast('Đã nhập dữ liệu'); rerender(); } catch (x) { toast('File không hợp lệ'); } }; r.readAsText(fl);
+    r.onload = () => { try { const d = JSON.parse(r.result); if (!d.profile || !d.sessions) throw 0; S = { ...defaults(), ...d, health: { ...defaults().health, ...d.health }, seeded: d.seeded || [] }; migrate(); save(); applyTheme(); toast('Đã nhập dữ liệu'); rerender(); } catch (x) { toast('File không hợp lệ'); } }; r.readAsText(fl);
   }
 }
 document.addEventListener('input', e => onInput(e, false));
@@ -1021,7 +1058,7 @@ async function syncNow(manual) {
       if (lu > (SY.last || 0) && !confirm('Cả hai máy đều có thay đổi mới.\n\nOK = dùng dữ liệu từ GitHub (bỏ thay đổi trên máy này)\nHuỷ = giữ dữ liệu máy này và ghi đè GitHub')) push = true; else pull = true;
     } else if (!remote || lu > ru) push = true;
     if (pull) {
-      const act = S.active; S = { ...defaults(), ...remote, profile: { ...defaults().profile, ...remote.profile }, remind: { ...defaults().remind, ...remote.remind }, deload: { ...defaults().deload, ...remote.deload }, health: { ...defaults().health, ...remote.health }, active: act };
+      const act = S.active; S = { ...defaults(), ...remote, profile: { ...defaults().profile, ...remote.profile }, remind: { ...defaults().remind, ...remote.remind }, deload: { ...defaults().deload, ...remote.deload }, health: { ...defaults().health, ...remote.health }, seeded: remote.seeded || [], active: act }; migrate();
       try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} applyTheme(); SY.msg = 'Đã tải dữ liệu mới từ GitHub';
       if (!/^#\/(workout|routine)/.test(location.hash) && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '')) render();
     } else if (push) {

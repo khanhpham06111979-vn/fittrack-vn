@@ -30,6 +30,12 @@ const EXERCISES = [
   // Core
   { id: 'plank', name: 'Plank', g: 'Core', type: 'time', min: 30, max: 90, cue: 'Siết bụng và mông, không võng lưng. Nhập số giây.' },
   { id: 'crunch', name: 'Gập bụng', g: 'Core', type: 'bw', min: 12, max: 25, cue: 'Cuộn thân trên, thở ra khi gập.' },
+  { id: 'ab-roller', name: 'Con lăn bụng (quỳ gối)', g: 'Core', type: 'bw', min: 6, max: 15, img: 'img/ab-roller.webp', cue: 'Quỳ trên thảm, nắm hai tay cầm, siết bụng và mông. Lăn ra từ từ đến khi thân gần song song sàn, giữ lưng thẳng không võng, rồi kéo về bằng bụng. Người mới chỉ lăn 1/2 đến 2/3 tầm. Đau lưng thì dừng.' },
+  { id: 'ab-roller-diag', name: 'Con lăn bụng lăn chéo', g: 'Core', type: 'bw', min: 6, max: 12, img: 'img/ab-roller.webp', cue: 'Giống con lăn thẳng nhưng lăn chếch sang một bên rồi bên kia (mỗi bên tính một lần), siết sườn bụng, hông không xoay.' },
+  { id: 'twister-chest', name: 'Gập gậy lò xo trước ngực (20 kg)', g: 'Ngực', type: 'machine', min: 12, max: 25, w0: 20, fixed: 1, img: 'img/spring-bar.webp', cue: 'Đứng thẳng, hai tay nắm hai đầu gậy ngang ngực, ép gậy cong bằng ngực, giữ 1 giây rồi nhả chậm. Lực lò xo cố định nên tăng độ khó bằng số lần, nhịp chậm và giữ lâu hơn.' },
+  { id: 'twister-shoulder', name: 'Gập gậy lò xo qua đầu (vai)', g: 'Vai', type: 'machine', min: 12, max: 25, w0: 20, fixed: 1, img: 'img/spring-bar.webp', cue: 'Nắm gậy phía trên đầu, ép cong với khuỷu hơi cong, không ưỡn lưng. Bắt đầu bằng biên độ nhỏ nếu vai còn yếu.' },
+  { id: 'twister-biceps', name: 'Gập gậy lò xo tay trước', g: 'Tay trước', type: 'machine', min: 12, max: 25, w0: 20, fixed: 1, img: 'img/spring-bar.webp', cue: 'Đặt một đầu gậy chắc vào đùi hoặc cạnh hông, tay kia kéo đầu còn lại về vai như cuốn tạ. Khuỷu sát thân, làm mỗi bên một lượt.' },
+  { id: 'twister-triceps', name: 'Gập gậy lò xo tay sau', g: 'Tay sau', type: 'machine', min: 12, max: 25, w0: 20, fixed: 1, img: 'img/spring-bar.webp', cue: 'Một tay giữ đầu gậy sau gáy hoặc vai, tay kia ép đầu còn lại xuống phía thân sau, duỗi thẳng tay. Giữ khuỷu cố định, làm mỗi bên một lượt.' },
   { id: 'leg-raise', name: 'Nâng chân (core dưới)', g: 'Core', type: 'bw', min: 8, max: 15, cue: 'Lưng dán sát, hạ chân chậm.' },
 ];
 
@@ -43,6 +49,9 @@ const DEFAULT_ROUTINES = [
   { id: 'legs', name: 'Chân & Core', sub: 'Đùi · Mông · Bụng', main: 1, ex: [
     { id: 'leg-press', sets: 4 }, { id: 'leg-curl', sets: 3 }, { id: 'leg-ext', sets: 3 },
     { id: 'glute-bridge', sets: 3 }, { id: 'calf-raise', sets: 3 }, { id: 'plank', sets: 3 } ] },
+  { id: 'home', name: 'Tại nhà: lò xo và con lăn', sub: 'Gậy lò xo 20 kg · Con lăn bụng', ex: [
+    { id: 'twister-chest', sets: 3 }, { id: 'twister-shoulder', sets: 3 }, { id: 'twister-biceps', sets: 3 },
+    { id: 'twister-triceps', sets: 3 }, { id: 'ab-roller', sets: 3 }, { id: 'plank', sets: 3 } ] },
   { id: 'full', name: 'Toàn thân nhanh', sub: 'Khoảng 40 phút khi ít thời gian', ex: [
     { id: 'chest-press', sets: 3 }, { id: 'lat-pulldown', sets: 3 }, { id: 'leg-press', sets: 3 },
     { id: 'shoulder-press', sets: 2 }, { id: 'seated-row', sets: 2 }, { id: 'plank', sets: 2 } ] },
