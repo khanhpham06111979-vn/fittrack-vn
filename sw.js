@@ -1,5 +1,5 @@
-const C='fittrack-vn-v2';
-const FILES=['./','./index.html','./style.css','./data.js','./app.js','./manifest.webmanifest','./icons/icon.svg','./icons/icon-192.png','./icons/icon-512.png','./img/ab-roller.webp','./img/spring-bar.webp'];
+const C='fittrack-vn-v3';
+const FILES=['./','./index.html','./style.css','./data.js','./app.js','./manifest.webmanifest','./icons/icon.svg','./icons/icon-192.png','./icons/icon-512.png','./img/ab-roller.webp','./img/spring-bar.webp','./img/dumbbell.webp'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))).then(()=>self.clients.claim()))});
 self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;

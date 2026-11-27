@@ -22,16 +22,17 @@ const defaults = () => ({
   profile: { name: '', sex: 'm', age: 30, height: 170, weight: 70, goalWeight: 0, goal: 'recomp', activity: 1.375, weeklyGoal: 3, rest: 90, accent: '#B7E21E', mode: 'auto' },
   remind: { on: false, days: [1, 3, 5], time: '18:00' }, deload: { on: false, start: 0, last: 0, every: 6 }, customFoods: [],
   routines: JSON.parse(JSON.stringify(DEFAULT_ROUTINES)), customEx: [],
-  sessions: [], cardio: [], body: [], food: {}, water: {}, active: null, updated: 0, health: { records: [], imaging: [], notes: [], recheck: '' }, reportSeen: '', waterLog: {}, seeded: ['home'],
+  sessions: [], cardio: [], body: [], food: {}, water: {}, active: null, updated: 0, health: { records: [], imaging: [], notes: [], recheck: '' }, reportSeen: '', waterLog: {}, seeded: ['home', 'arms'], equip: { dbOpts: [5, 10, 15], dbBar: 0 },
 });
 let S = load(); migrate();
 function load() {
-  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d) { const b = defaults(); return { ...b, ...d, profile: { ...b.profile, ...d.profile }, remind: { ...b.remind, ...d.remind }, deload: { ...b.deload, ...d.deload }, health: { ...b.health, ...d.health }, seeded: d.seeded || [] }; } } catch (e) {}
+  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d) { const b = defaults(); return { ...b, ...d, profile: { ...b.profile, ...d.profile }, remind: { ...b.remind, ...d.remind }, deload: { ...b.deload, ...d.deload }, health: { ...b.health, ...d.health }, seeded: d.seeded || [], equip: { ...b.equip, ...d.equip } }; } } catch (e) {}
   return defaults();
 }
 function migrate() {
-  S.seeded = S.seeded || [];
-  if (!S.seeded.includes('home')) { const h = DEFAULT_ROUTINES.find(r => r.id === 'home'); if (h && !S.routines.some(r => r.id === 'home')) S.routines.push(JSON.parse(JSON.stringify(h))); S.seeded.push('home'); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+  S.seeded = S.seeded || []; let ch = false;
+  DEFAULT_ROUTINES.filter(r => r.seed).forEach(r => { if (S.seeded.includes(r.id)) return; if (!S.routines.some(x => x.id === r.id)) S.routines.push(JSON.parse(JSON.stringify(r))); S.seeded.push(r.id); ch = true; });
+  if (ch) { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 }
 function save() { S.updated = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} schedPush(); }
 
@@ -199,20 +200,24 @@ function startRoutine(id) {
   S.active = { routineId: r.id, name: r.name, start: Date.now(), exs: r.ex.map(e => buildEx(e.id, e.sets)) };
   save(); location.hash = '#/workout';
 }
+const dbTotals = () => [...new Set((S.equip.dbOpts || [5]).map(Number).filter(x => x > 0))].sort((a, b) => a - b).map(o => round(o + (S.equip.dbBar || 0), 2));
+const snapDb = plates => { const t = dbTotals(), target = plates + (S.equip.dbBar || 0); return t.reduce((b, x) => Math.abs(x - target) < Math.abs(b - target) ? x : b, t[0]); };
 function buildEx(id, n = 3) {
   const ex = exOf(id), last = lastSessionOf(id); let sets;
   if (last) sets = last.sets.map(s => ({ w: s.w, r: s.r, done: false }));
-  else sets = Array.from({ length: n }, () => ({ w: ex.w0 || 0, r: ex.min, done: false }));
+  else sets = Array.from({ length: n }, () => ({ w: ex.type === 'db' ? snapDb(ex.w0 || 5) : ex.w0 || 0, r: ex.min, done: false }));
   while (sets.length < n) sets.push({ ...sets[sets.length - 1], done: false });
   sets = sets.slice(0, Math.max(n, 1));
   // Gợi ý tăng tạ nếu lần trước đạt hết mức reps cao nhất
   let hint = '';
   if (deloadActive()) {
     if (ex.type === 'machine') sets.forEach(s => s.w = Math.round(s.w * 0.9 * 2) / 2);
+    else if (ex.type === 'db') sets.forEach(s => { const lo = dbTotals().filter(x => x < s.w - 0.01); if (lo.length) s.w = lo[lo.length - 1]; });
     sets = sets.slice(0, Math.max(2, n - 1)); sets.forEach(s => s.r = Math.min(s.r, ex.max));
     hint = 'Tuần nhẹ: tạ giảm ~10%, bớt 1 set, dừng cách giới hạn 3–4 reps.';
   } else if (last && ex.type !== 'time' && last.sets.every(s => s.r >= ex.max)) {
     if (ex.fixed) hint = `Lần trước đạt ${ex.max} reps: tăng độ khó bằng nhịp chậm hơn, giữ 1–2 giây ở điểm ép tối đa, hoặc thêm một set.`;
+    else if (ex.type === 'db') { const cur = Math.max(...sets.map(s => s.w)), nxt = dbTotals().find(t => t > cur + 0.01); if (nxt) { sets.forEach(s => { s.w = nxt; s.r = ex.min; }); hint = `Lần trước đạt ${ex.max} reps ở mọi set: thử tạ ${nxt} kg (mức tạ kế tiếp của bạn).`; } else hint = 'Đã ở mức tạ lớn nhất của bạn: tăng nhịp chậm, giữ 1–2 giây ở điểm siết hoặc thêm set.'; }
     else if (ex.type === 'machine') { const inc = 2.5; sets.forEach(s => { s.w = round(s.w + inc, 1); s.r = ex.min; }); hint = `Lần trước đạt ${ex.max} reps ở mọi set: thử tăng lên ${sets[0].w} kg.`; }
     else hint = `Lần trước đạt ${ex.max} reps: thử thêm tạ hoặc chọn biến thể khó hơn.`;
   }
@@ -232,7 +237,7 @@ function vWorkout() {
       ${tm ? '' : `<input inputmode="decimal" data-in="ws" data-i="${i}" data-j="${j}" data-f="w" value="${s.w || ''}" placeholder="0">`}
       <input inputmode="numeric" data-in="ws" data-i="${i}" data-j="${j}" data-f="r" value="${s.r || ''}" placeholder="0">
       <button class="chk ${s.done ? 'on' : ''}" data-a="chk" data-i="${i}" data-j="${j}" aria-label="Xong set">✓</button><button class="x" data-a="rmSet" data-i="${i}" data-j="${j}" aria-label="Xoá set">−</button></div>`).join('')}
-    <button class="btn sm ghost" data-a="addSet" data-i="${i}">+ Thêm set</button></div>`;
+    <button class="btn sm ghost" data-a="addSet" data-i="${i}">+ Thêm set</button>${ex.type === 'db' ? `<div class="sub" style="margin-top:6px">Chọn nhanh tạ mỗi quả: ${dbTotals().map(t => `<button class="btn sm" style="margin:2px 2px 0 0" data-a="dbw" data-i="${i}" data-v="${t}">${t} kg</button>`).join('')}</div>` : ''}</div>`;
   }).join('');
   return `<div class="row">${head(esc(a.name))}<span class="sp"></span><b id="elapsed" class="sub">${fmtDur((Date.now() - a.start) / 1000)}</b></div>
   <div class="row"><span class="sub">Giờ bắt đầu</span><input type="datetime-local" data-in="wstart" value="${dtl(a.start)}" max="${dtl(Date.now())}" style="width:auto;flex:1"></div>
@@ -804,6 +809,8 @@ function vProfile() {
   <div class="grid2">${f('Mục tiêu buổi tạ/tuần', 'weeklyGoal')}${f('Nghỉ giữa set (giây)', 'rest')}</div></div>
   <h2>Mục tiêu hằng ngày (tự tính)</h2><div class="grid2"><div class="stat"><b id="tg-k">${t.kcal}</b><span>kcal/ngày (TDEE <span id="tg-t">${t.tdee}</span>)</span></div><div class="stat"><b id="tg-p">${t.protein}g</b><span>đạm/ngày</span></div></div>
   <div class="sub mt">Công thức Mifflin-St Jeor, chỉ mang tính tham khảo. Điều chỉnh theo cân nặng thực tế sau 2–3 tuần.</div>
+  <h2>Dụng cụ tạ đơn</h2><div class="card"><div class="grid2"><div><label>Các mức tạ mỗi quả (kg đĩa)</label><input data-in="eq" data-f="dbOpts" value="${esc((S.equip.dbOpts || []).join(', '))}" placeholder="5, 10, 15"></div><div><label>Trọng lượng đòn mỗi quả (kg)</label><input data-in="eq" data-f="dbBar" inputmode="decimal" value="${S.equip.dbBar || 0}"></div></div>
+  <div class="sub mt">Ví dụ bộ của bạn: 15 kg và 5 kg đĩa (chưa tính đòn). Gộp 20 kg đĩa rồi chia đều thành 2 quả 10 kg để tập hai tay cân bằng. Nhập khối lượng đòn nếu muốn app tính đúng tổng tạ nâng. Mức tạ kế tiếp trong danh sách là mức app gợi ý khi bạn đạt đủ reps.</div></div>
   <h2>Giao diện</h2><div class="card"><label>Màu chủ đạo</label><div class="sw">${ACCENTS.map(a => `<button class="${p.accent === a[0] ? 'on' : ''}" style="background:${a[0]}" data-a="accent" data-c="${a[0]}" aria-label="${a[2]}"></button>`).join('')}</div>
   <label>Chế độ</label><div class="days">${[['auto', 'Tự động'], ['light', 'Sáng'], ['dark', 'Tối']].map(m => `<button class="btn ${p.mode === m[0] ? 'on' : ''}" data-a="mode" data-m="${m[0]}">${m[1]}</button>`).join('')}</div></div>
   <h2>Nhắc lịch tập</h2><div class="card"><div class="row"><span class="sp">Bật nhắc tập</span><button class="btn sm ${S.remind.on ? 'pri' : ''}" data-a="rmToggle">${S.remind.on ? 'Đang bật' : 'Đang tắt'}</button></div>
@@ -852,6 +859,7 @@ const A = {
   start: el => startRoutine(el.dataset.id),
   chk(el) { const s = S.active.exs[+el.dataset.i].sets[+el.dataset.j]; s.done = !s.done; save();
     if (s.done) { const ex = exOf(S.active.exs[+el.dataset.i].id); startRest(S.profile.rest + (ex.big ? 30 : 0)); } rerender(); },
+  dbw(el) { S.active.exs[+el.dataset.i].sets.forEach(s => { if (!s.done) s.w = +el.dataset.v; }); save(); rerender(); },
   addSet(el) { const e = S.active.exs[+el.dataset.i], l = e.sets[e.sets.length - 1] || { w: 0, r: 10 }; e.sets.push({ w: l.w, r: l.r, done: false }); save(); rerender(); },
   rmSet(el) { const e = S.active.exs[+el.dataset.i]; e.sets.splice(+el.dataset.j, 1); save(); rerender(); },
   rmEx(el) { if (confirm('Bỏ bài này khỏi buổi tập?')) { S.active.exs.splice(+el.dataset.i, 1); save(); rerender(); } },
@@ -998,6 +1006,7 @@ function onInput(e, committed) {
     const fl = el.files[0]; if (!fl) return; const label = $('#ph-label').value;
     shrink(fl).then(blob => idbDo('readwrite', s => s.put({ id: uid(), date: Date.now(), label, blob }))).then(() => { toast('Đã lưu ảnh'); loadPhotos(); }).catch(() => toast('Không lưu được ảnh'));
   }
+  else if (committed && k === 'eq') { if (el.dataset.f === 'dbOpts') { const l = String(el.value).split(/[,;\s]+/).map(Number).filter(x => x > 0); if (l.length) S.equip.dbOpts = [...new Set(l)].sort((a, b) => a - b); } else S.equip.dbBar = Math.max(0, num(el.value)); save(); }
   else if (committed && k === 'stime') { const x = S.sessions.find(y => y.id === el.dataset.id), v = new Date(el.value).getTime(); if (x && v && v <= Date.now() + 60000) { x.date = v; S.sessions.sort((a, b) => a.date - b.date); save(); rerender(); } }
   else if (committed && k === 'wtime') { const w = (S.waterLog[foodDay] || []).find(x => x.id === el.dataset.id); if (w && el.value) { w.t = el.value; save(); } }
   else if (committed && k === 'wstart') { const v = new Date(el.value).getTime(); if (v && v <= Date.now() + 60000 && S.active) { S.active.start = v; save(); } }

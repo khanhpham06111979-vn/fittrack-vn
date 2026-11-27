@@ -36,6 +36,17 @@ const EXERCISES = [
   { id: 'twister-shoulder', name: 'Gập gậy lò xo qua đầu (vai)', g: 'Vai', type: 'machine', min: 12, max: 25, w0: 20, fixed: 1, img: 'img/spring-bar.webp', cue: 'Nắm gậy phía trên đầu, ép cong với khuỷu hơi cong, không ưỡn lưng. Bắt đầu bằng biên độ nhỏ nếu vai còn yếu.' },
   { id: 'twister-biceps', name: 'Gập gậy lò xo tay trước', g: 'Tay trước', type: 'machine', min: 12, max: 25, w0: 20, fixed: 1, img: 'img/spring-bar.webp', cue: 'Đặt một đầu gậy chắc vào đùi hoặc cạnh hông, tay kia kéo đầu còn lại về vai như cuốn tạ. Khuỷu sát thân, làm mỗi bên một lượt.' },
   { id: 'twister-triceps', name: 'Gập gậy lò xo tay sau', g: 'Tay sau', type: 'machine', min: 12, max: 25, w0: 20, fixed: 1, img: 'img/spring-bar.webp', cue: 'Một tay giữ đầu gậy sau gáy hoặc vai, tay kia ép đầu còn lại xuống phía thân sau, duỗi thẳng tay. Giữ khuỷu cố định, làm mỗi bên một lượt.' },
+  // Tạ đơn lắp đĩa (type 'db': mức tạ chọn theo bộ tạ trong Hồ sơ → Dụng cụ)
+  { id: 'db-curl', name: 'Cuốn tạ đơn đứng (biceps curl)', g: 'Tay trước', type: 'db', min: 8, max: 12, w0: 5, img: 'img/dumbbell.webp', cue: 'Đứng thẳng, khuỷu sát thân, cuốn tạ lên vai rồi hạ chậm 2–3 giây. Không đung đưa lưng, làm mỗi tay một lượt. Trước khi tập, vặn chặt ốc khoá đĩa ở hai đầu đòn.' },
+  { id: 'db-hammer', name: 'Cuốn tạ đơn kiểu búa (hammer curl)', g: 'Tay trước', type: 'db', min: 8, max: 12, w0: 5, img: 'img/dumbbell.webp', cue: 'Lòng bàn tay hướng vào nhau như cầm búa, cuốn lên giữ khuỷu cố định. Bài này tác động cả cơ cẳng tay. Trước khi tập, vặn chặt ốc khoá đĩa ở hai đầu đòn.' },
+  { id: 'db-conc', name: 'Cuốn tập trung (ngồi, chống khuỷu vào đùi)', g: 'Tay trước', type: 'db', min: 8, max: 12, w0: 5, img: 'img/dumbbell.webp', cue: 'Ngồi, chống khuỷu tay vào mặt trong đùi, cuốn tạ lên chậm và siết cơ ở điểm cao nhất. Mỗi tay một lượt. Trước khi tập, vặn chặt ốc khoá đĩa ở hai đầu đòn.' },
+  { id: 'db-ohtri', name: 'Duỗi tay sau qua đầu (một tạ, hai tay)', g: 'Tay sau', type: 'db', min: 8, max: 12, w0: 10, img: 'img/dumbbell.webp', cue: 'Hai tay ôm một đầu tạ phía sau đầu, khuỷu chụm về phía trước, duỗi thẳng tay lên rồi hạ chậm. Siết bụng, không ưỡn lưng. Trước khi tập, vặn chặt ốc khoá đĩa ở hai đầu đòn.' },
+  { id: 'db-skull', name: 'Duỗi tay sau nằm (skull crusher tạ đơn)', g: 'Tay sau', type: 'db', min: 8, max: 12, w0: 5, img: 'img/dumbbell.webp', cue: 'Nằm ngửa trên ghế hoặc sàn, tay thẳng lên trần, gập khuỷu hạ tạ về phía bên đầu rồi duỗi lên. Khuỷu cố định, tạ nhẹ, kiểm soát chậm. Trước khi tập, vặn chặt ốc khoá đĩa ở hai đầu đòn.' },
+  { id: 'db-kick', name: 'Đá tạ ra sau (tricep kickback)', g: 'Tay sau', type: 'db', min: 10, max: 15, w0: 5, img: 'img/dumbbell.webp', cue: 'Cúi người, lưng thẳng, khuỷu sát thân, duỗi thẳng tay ra sau và siết cơ tay sau 1 giây. Mỗi tay một lượt. Trước khi tập, vặn chặt ốc khoá đĩa ở hai đầu đòn.' },
+  { id: 'pushup-close', name: 'Hít đất tay hẹp', g: 'Tay sau', type: 'bw', min: 6, max: 15, cue: 'Hai tay đặt hẹp dưới ngực, khuỷu sát thân khi hạ người. Quỳ gối nếu còn nặng.' },
+  { id: 'db-row', name: 'Kéo tạ đơn một tay (one-arm row)', g: 'Lưng', type: 'db', min: 8, max: 12, w0: 15, img: 'img/dumbbell.webp', cue: 'Một tay và một gối chống lên ghế, lưng phẳng, kéo tạ về hông bằng lưng (khuỷu dẫn đầu), hạ chậm. Mỗi tay một lượt. Trước khi tập, vặn chặt ốc khoá đĩa ở hai đầu đòn.' },
+  { id: 'db-lateral', name: 'Nâng vai bên tạ đơn', g: 'Vai', type: 'db', min: 12, max: 20, w0: 5, img: 'img/dumbbell.webp', cue: 'Khuỷu hơi cong, nâng tạ sang bên đến ngang vai, hạ chậm. Dùng tạ nhẹ, không nhún người. Trước khi tập, vặn chặt ốc khoá đĩa ở hai đầu đòn.' },
+  { id: 'db-goblet', name: 'Goblet squat (ôm tạ trước ngực)', g: 'Chân', type: 'db', min: 10, max: 15, w0: 15, img: 'img/dumbbell.webp', cue: 'Ôm một đầu tạ sát ngực, ngồi xuống sâu vừa sức, lưng thẳng, gối theo hướng mũi chân, đứng lên bằng gót. Trước khi tập, vặn chặt ốc khoá đĩa ở hai đầu đòn.' },
   { id: 'leg-raise', name: 'Nâng chân (core dưới)', g: 'Core', type: 'bw', min: 8, max: 15, cue: 'Lưng dán sát, hạ chân chậm.' },
 ];
 
@@ -49,9 +60,12 @@ const DEFAULT_ROUTINES = [
   { id: 'legs', name: 'Chân & Core', sub: 'Đùi · Mông · Bụng', main: 1, ex: [
     { id: 'leg-press', sets: 4 }, { id: 'leg-curl', sets: 3 }, { id: 'leg-ext', sets: 3 },
     { id: 'glute-bridge', sets: 3 }, { id: 'calf-raise', sets: 3 }, { id: 'plank', sets: 3 } ] },
-  { id: 'home', name: 'Tại nhà: lò xo và con lăn', sub: 'Gậy lò xo 20 kg · Con lăn bụng', ex: [
+  { id: 'home', seed: 1, name: 'Tại nhà: lò xo và con lăn', sub: 'Gậy lò xo 20 kg · Con lăn bụng', ex: [
     { id: 'twister-chest', sets: 3 }, { id: 'twister-shoulder', sets: 3 }, { id: 'twister-biceps', sets: 3 },
     { id: 'twister-triceps', sets: 3 }, { id: 'ab-roller', sets: 3 }, { id: 'plank', sets: 3 } ] },
+  { id: 'arms', name: 'Tay trước và tay sau (tạ đơn)', sub: 'Xen kẽ tay trước, tay sau để tiết kiệm thời gian nghỉ', seed: 1, ex: [
+    { id: 'db-curl', sets: 3 }, { id: 'db-ohtri', sets: 3 }, { id: 'db-hammer', sets: 3 },
+    { id: 'db-skull', sets: 3 }, { id: 'db-conc', sets: 2 }, { id: 'db-kick', sets: 2 } ] },
   { id: 'full', name: 'Toàn thân nhanh', sub: 'Khoảng 40 phút khi ít thời gian', ex: [
     { id: 'chest-press', sets: 3 }, { id: 'lat-pulldown', sets: 3 }, { id: 'leg-press', sets: 3 },
     { id: 'shoulder-press', sets: 2 }, { id: 'seated-row', sets: 2 }, { id: 'plank', sets: 2 } ] },
