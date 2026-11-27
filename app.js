@@ -306,17 +306,112 @@ function drawPicker() {
 }
 const pickList = list => list.map(e => `<div class="item" data-a="pick" data-id="${e.id}" style="cursor:pointer"><div class="sp"><b>${esc(e.name)}</b><div class="sub">${esc(e.g)}</div></div><span class="chip">+</span></div>`).join('') || '<div class="empty">Không tìm thấy.</div>';
 
+/* ---------- Theo dõi GPS, nhập GPX/TCX ---------- */
+const TKEY = 'fittrack-track-v1', TLIM = { run: { acc: 30, vmax: 7.5, min: 3 }, walk: { acc: 30, vmax: 3.5, min: 3 }, cycle: { acc: 40, vmax: 18, min: 5 } };
+const hav = (a, b) => { const R = 6371000, r = x => x * Math.PI / 180, dLa = r(b.lat - a.lat), dLo = r(b.lon - a.lon), x = Math.sin(dLa / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
+const fmtPace = m => { if (!isFinite(m) || m <= 0) return '--:--'; let mi = Math.floor(m), sc = Math.round((m - mi) * 60); if (sc === 60) { mi++; sc = 0; } return mi + ':' + String(sc).padStart(2, '0'); };
+const strideOf = type => (S.profile.height || 170) / 100 * (type === 'walk' ? 0.415 : type === 'run' ? 0.65 : 0);
+const stepsOf = c => c.steps || (c.km && strideOf(c.type) ? Math.round(c.km * 1000 / strideOf(c.type)) : 0);
+let TR = null, trWatch = null, wl = null, trSaveAt = 0, dimOn = false, lastTouch = Date.now(), holdT = null, IMP = [];
+const autoDim = () => { try { return localStorage.getItem('fittrack-dim') !== '0'; } catch (e) { return true; } };
+(function trkLoad() { try { const d = JSON.parse(localStorage.getItem(TKEY)); if (d && d.points && d.start) { TR = d; if (TR.status === 'tracking') TR.status = 'recovered'; } } catch (e) {} })();
+function trkSave(force) { if (!TR) return; const n = Date.now(); if (!force && n - trSaveAt < 5000) return; trSaveAt = n; TR.seen = n; try { localStorage.setItem(TKEY, JSON.stringify(TR)); } catch (e) {} }
+const trkClear = () => { TR = null; try { localStorage.removeItem(TKEY); } catch (e) {} };
+const trkElapsed = () => { const end = TR.status === 'tracking' ? Date.now() : TR.status === 'paused' ? TR.pauseStart : (TR.seen || Date.now()); return Math.max(0, (end - TR.start - (TR.pausedMs || 0)) / 1000); };
+function trkStats() {
+  const km = TR.dist / 1000, el = trkElapsed(), pace = km > 0.02 ? el / 60 / km : 0; let now = 0; const P = TR.points;
+  if (P.length > 1) { const last = P[P.length - 1]; let j = P.length - 1, d = 0; while (j > 0 && last.t - P[j - 1].t <= 30000) j--; for (let i = j + 1; i < P.length; i++) if (!P[i].g) d += hav(P[i - 1], P[i]); const dt = (last.t - P[j].t) / 1000; if (d >= 15 && dt >= 10) now = dt / 60 / (d / 1000); }
+  const sl = strideOf(TR.type); return { km, el, pace, now, spd: el > 0 ? km / (el / 3600) : 0, kcal: cardioKcal({ type: TR.type, km, min: el / 60 }), steps: sl ? Math.round(TR.dist / sl) : 0 };
+}
+function onPos(pos) {
+  if (!TR || TR.status !== 'tracking') return; const c = pos.coords, lim = TLIM[TR.type] || TLIM.run; TR.acc = c.accuracy;
+  if (c.accuracy > lim.acc) return;
+  const p = { t: pos.timestamp, lat: +c.latitude.toFixed(6), lon: +c.longitude.toFixed(6) }, last = TR.points[TR.points.length - 1];
+  if (!last || TR.gap) { if (last && TR.gap) p.g = 1; TR.gap = false; TR.points.push(p); trkSave(); return; }
+  const d = hav(last, p), dt = (p.t - last.t) / 1000; if (dt <= 0 || d < Math.max(lim.min, c.accuracy * 0.3) || d / dt > lim.vmax) return;
+  if (dt > 30) TR.interrupted = true; TR.dist += d; TR.points.push(p); trkSave();
+}
+function onGeoErr(e) { if (e.code === 1) { toast('Bạn chưa cho phép truy cập vị trí. Hãy bật quyền Vị trí cho trang này.'); stopWatch(); wlOff(); trkClear(); rerender(); } else if (TR) TR.acc = 0; }
+function trkWatch() { stopWatch(); trWatch = navigator.geolocation.watchPosition(onPos, onGeoErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }); }
+function stopWatch() { if (trWatch !== null) { try { navigator.geolocation.clearWatch(trWatch); } catch (e) {} trWatch = null; } }
+async function wlOn() { try { if ('wakeLock' in navigator && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } } catch (e) { wl = null; } }
+async function wlOff() { try { if (wl) await wl.release(); } catch (e) {} wl = null; }
+document.addEventListener('visibilitychange', () => { if (!document.hidden && TR && TR.status === 'tracking') wlOn(); });
+function showDim() { if (dimOn) return; dimOn = true; const d = $('#dim'); d.hidden = false; d.innerHTML = '<div id="dim-main"></div><button id="dim-hold" type="button"><i></i><span>Giữ 1,5 giây để mở khoá</span></button>'; dimTick(); }
+function hideDim() { dimOn = false; const d = $('#dim'); d.hidden = true; d.innerHTML = ''; lastTouch = Date.now(); }
+function dimTick() { const m = $('#dim-main'); if (!m || !TR) return; const s = trkStats(); m.innerHTML = `<b>${s.km.toFixed(2)} km</b><span>${fmtDur(s.el)} · ${fmtPace(s.pace)}/km</span>`; }
+document.addEventListener('pointerdown', e => { lastTouch = Date.now(); const h = e.target.closest && e.target.closest('#dim-hold'); if (h) { h.classList.add('holding'); clearTimeout(holdT); holdT = setTimeout(hideDim, 1500); } }, true);
+['pointerup', 'pointercancel'].forEach(ev => document.addEventListener(ev, () => { clearTimeout(holdT); const h = $('#dim-hold'); if (h) h.classList.remove('holding'); }, true));
+document.addEventListener('touchmove', e => { if (dimOn) e.preventDefault(); }, { passive: false });
+document.addEventListener('contextmenu', e => { if (dimOn) e.preventDefault(); });
+function trkTick() {
+  const bar = $('#trkbar'); if (!TR) { bar.hidden = true; return; }
+  const s = trkStats(), set = (id, v) => { const e = $('#' + id); if (e) e.textContent = v; };
+  set('t-time', fmtDur(s.el)); set('t-dist', s.km.toFixed(2)); set('t-pace', fmtPace(s.pace)); set('t-now', fmtPace(s.now)); set('t-spd', round(s.spd, 1)); set('t-kcal', Math.round(s.kcal)); set('t-steps', s.steps ? s.steps.toLocaleString('vi-VN') : '–');
+  const g = $('#t-gps'); if (g) g.textContent = TR.status === 'paused' ? '⏸ Đang tạm dừng' : !TR.points.length ? '📡 Đang tìm tín hiệu GPS, hãy ra chỗ thoáng...' : TR.acc ? (TR.acc <= 20 ? '🟢' : '🟠') + ' GPS ±' + Math.round(TR.acc) + ' m' : '';
+  const w = $('#t-warn'); if (w) w.hidden = !TR.interrupted;
+  if (dimOn) dimTick();
+  const show = !location.hash.startsWith('#/cardio') && !dimOn; if (show && bar.hidden) bar.innerHTML = '<span id="trkbar-t"></span><a class="btn sm" href="#/cardio">Mở</a>'; bar.hidden = !show;
+  if (show) { const t = $('#trkbar-t'); if (t) t.textContent = TR.status === 'recovered' ? '⚠ Buổi theo dõi dở dang' : (TR.status === 'paused' ? '⏸ ' : '📍 ') + s.km.toFixed(2) + ' km · ' + fmtDur(s.el); }
+  if (TR.status === 'tracking' && autoDim() && !dimOn && document.visibilityState === 'visible' && Date.now() - lastTouch > 20000) showDim();
+}
+setInterval(trkTick, 1000);
+function routeOf(P) {
+  if (!P.length) return []; let tot = 0; for (let i = 1; i < P.length; i++) if (!P[i].g) tot += hav(P[i - 1], P[i]);
+  const step = Math.max(5, tot / 250), out = [[P[0].lat, P[0].lon]]; let acc = 0;
+  for (let i = 1; i < P.length; i++) { const g = P[i].g; acc += g ? 0 : hav(P[i - 1], P[i]); if (g || acc >= step || i === P.length - 1) { out.push(g ? [P[i].lat, P[i].lon, 1] : [P[i].lat, P[i].lon]); acc = 0; } }
+  return out;
+}
+function routeSvg(R) {
+  if (R.length < 2) return ''; const la = R.map(p => p[0]), lo = R.map(p => p[1]), a0 = Math.min(...la), a1 = Math.max(...la), o0 = Math.min(...lo), o1 = Math.max(...lo), k = Math.cos((a0 + a1) / 2 * Math.PI / 180), W = 300, pad = 16;
+  const w = Math.max((o1 - o0) * k, 1e-6), h = Math.max(a1 - a0, 1e-6), sc = Math.min((W - 2 * pad) / w, (W - 2 * pad) / h), ox = (W - w * sc) / 2, oy = (W - h * sc) / 2, X = x => ox + (x - o0) * k * sc, Y = y => W - (oy + (y - a0) * sc);
+  let d = ''; R.forEach((p, i) => { d += (i === 0 || p[2] ? 'M' : 'L') + X(p[1]).toFixed(1) + ' ' + Y(p[0]).toFixed(1) + ' '; }); const a = R[0], z = R[R.length - 1];
+  return `<svg viewBox="0 0 300 300" style="width:100%;background:var(--bg);border-radius:14px"><path d="${d}" fill="none" stroke="var(--acc)" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${X(a[1]).toFixed(1)}" cy="${Y(a[0]).toFixed(1)}" r="6" fill="#2FA84F"/><circle cx="${X(z[1]).toFixed(1)}" cy="${Y(z[0]).toFixed(1)}" r="6" fill="#E5484D"/></svg>`;
+}
+function trkPanel() {
+  const types = [['run', '🏃 Chạy bộ'], ['walk', '🚶 Đi bộ nhanh'], ['cycle', '🚴 Đạp xe']];
+  if (!TR) return `<div class="card"><b>📍 Theo dõi GPS</b><div class="sub">Đo km, pace, kcal và bước chân ước tính. Mở app, app sẽ giữ màn hình sáng và tự làm tối để chống chạm nhầm.</div><label>Loại</label><select id="trk-type">${types.map(t => `<option value="${t[0]}">${t[1]}</option>`).join('')}</select><button class="btn pri block mt" data-a="trkStart">▶ Bắt đầu</button><label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" style="width:auto" data-in="dimAuto" ${autoDim() ? 'checked' : ''}> Tự làm tối màn hình sau 20 giây khi đang theo dõi</label></div>`;
+  if (TR.status === 'recovered') { const s = trkStats(); return `<div class="card"><div class="ins warn"><b>⚠️ Buổi theo dõi dở dang</b><div class="sub">${s.km.toFixed(2)} km, ${fmtDur(s.el)}. App đã bị đóng hoặc tải lại giữa chừng.</div></div><div class="grid2 mt"><button class="btn pri" data-a="trkResume">Tiếp tục</button><button class="btn" data-a="trkFinish">Lưu buổi này</button></div><button class="btn danger block mt" data-a="trkDiscard">Bỏ buổi này</button></div>`; }
+  const st = (id, v, l) => `<div class="stat"><b id="${id}">${v}</b><span>${l}</span></div>`;
+  return `<div class="card trk"><div class="sub" id="t-gps"></div><div class="grid2 mt">${st('t-dist', '0.00', 'km')}${st('t-time', '0:00', 'thời gian')}${st('t-pace', '--:--', 'pace trung bình (/km)')}${st('t-now', '--:--', 'pace hiện tại (/km)')}${st('t-spd', '0', 'km/h')}${st('t-kcal', '0', 'kcal ước tính')}</div>
+  <div class="sub mt">Bước chân ước tính: <b id="t-steps">–</b> (tính từ quãng đường và chiều cao)</div><div class="hint" id="t-warn" hidden>Có đoạn GPS bị gián đoạn (khoá màn hình hoặc mất tín hiệu), quãng đường có thể thiếu.</div>
+  <div class="grid2 mt">${TR.status === 'paused' ? '<button class="btn pri" data-a="trkResume">▶ Tiếp tục</button>' : '<button class="btn" data-a="trkPause">⏸ Tạm dừng</button>'}<button class="btn" data-a="dimNow">🌑 Làm tối màn hình</button></div><button class="btn pri block mt" data-a="trkFinish">⏹ Kết thúc và lưu</button></div>`;
+}
+function mkType(s) { s = String(s || '').toLowerCase(); return /run|chạy/.test(s) ? 'run' : /walk|hik|đi bộ/.test(s) ? 'walk' : /bik|cycl|ride|đạp/.test(s) ? 'cycle' : 'other'; }
+function finishAct(pts, type, dist, secs, fname, start) {
+  if (!pts.length && !dist) return null; let d = 0; const lim = type === 'cycle' ? 25 : type === 'other' ? 30 : 12;
+  for (let i = 1; i < pts.length; i++) { if (pts[i].g) continue; const dd = hav(pts[i - 1], pts[i]), a = pts[i - 1].t, b = pts[i].t, dt = a && b ? (b - a) / 1000 : 0; if (dt > 0 && dd / dt > lim) continue; d += dd; }
+  const ts = pts.filter(p => p.t), st = start || (ts[0] && ts[0].t) || null, hrs = pts.filter(p => p.hr > 30 && p.hr < 230).map(p => p.hr);
+  return { name: fname, type, start: st, km: (dist || d) / 1000, min: secs ? secs / 60 : ts.length > 1 ? (ts[ts.length - 1].t - ts[0].t) / 60000 : 0, hr: hrs.length ? avgOf(hrs) : 0, route: routeOf(pts) };
+}
+function parseActivities(text, fname) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml'); if (doc.getElementsByTagName('parsererror').length) throw new Error('xml');
+  const q = (n, r = doc) => [...r.getElementsByTagNameNS('*', n)], tx = (el, n) => { const e = q(n, el)[0]; return e ? e.textContent.trim() : ''; }, out = [];
+  if (q('trk').length) q('trk').forEach(trk => { const pts = []; q('trkseg', trk).forEach(sg => q('trkpt', sg).forEach((pt, i) => { const t = Date.parse(tx(pt, 'time')); pts.push({ lat: +pt.getAttribute('lat'), lon: +pt.getAttribute('lon'), t: isFinite(t) ? t : null, g: i === 0 && pts.length ? 1 : 0, hr: +tx(pt, 'hr') || 0 }); })); out.push(finishAct(pts, mkType(tx(trk, 'type') || tx(trk, 'name')), 0, 0, fname)); });
+  else if (q('Activity').length) q('Activity').forEach(act => {
+    const laps = q('Lap', act), pts = []; let dist = 0, secs = 0;
+    laps.forEach(l => { dist += +tx(l, 'DistanceMeters') || 0; secs += +tx(l, 'TotalTimeSeconds') || 0; q('Trackpoint', l).forEach((tp, i) => { const la = tx(tp, 'LatitudeDegrees'), lo = tx(tp, 'LongitudeDegrees'), t = Date.parse(tx(tp, 'Time')); if (la && lo) pts.push({ lat: +la, lon: +lo, t: isFinite(t) ? t : null, g: i === 0 && pts.length ? 1 : 0, hr: +tx(q('HeartRateBpm', tp)[0] || tp, 'Value') || 0 }); }); });
+    out.push(finishAct(pts, mkType(act.getAttribute('Sport')), dist, secs, fname, Date.parse(tx(act, 'Id')) || (laps[0] && Date.parse(laps[0].getAttribute('StartTime'))) || null));
+  });
+  return out.filter(Boolean);
+}
+function impModal() {
+  modal(`<div class="row"><h3 class="sp">Nhập buổi tập từ file</h3><button class="btn sm" data-a="closeModal">Đóng</button></div>${IMP.map((a, i) => `<div class="item"><input type="checkbox" style="width:auto" data-in="impck" data-i="${i}" ${a.on ? 'checked' : ''} ${a.bad ? 'disabled' : ''}><div class="sp"><b>${a.start ? new Date(a.start).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' }) : 'Không rõ ngày'}</b><div class="sub">${round(a.km, 2)} km · ${Math.round(a.min)} phút${a.km && a.min ? ' · ' + fmtPace(a.min / a.km) + '/km' : ''}${a.hr ? ' · ❤ ' + Math.round(a.hr) : ''}</div><div class="sub">${esc(a.name)}${a.dup ? ' · đã có trong app' : ''}${a.bad ? ' · thiếu dữ liệu' : ''}</div></div><select data-in="imptype" data-i="${i}" style="width:auto">${CARDIO_TYPES.map(t => `<option value="${t.id}" ${t.id === a.type ? 'selected' : ''}>${t.name}</option>`).join('')}</select></div>`).join('') || '<div class="empty">Không đọc được buổi tập nào.</div>'}<button class="btn pri block mt" data-a="impDo">Nhập các buổi đã chọn</button>`);
+}
+
 /* ---------- Cardio ---------- */
 function vCardio() {
   const ts = CARDIO_TYPES.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
   const list = [...S.cardio].sort((a, b) => b.date - a.date).slice(0, 20).map(c => {
-    const t = CARDIO_TYPES.find(x => x.id === c.type) || CARDIO_TYPES[5], pace = c.km && c.min ? round(c.min / c.km, 2) : 0;
-    return `<div class="item"><div class="sp"><b>${t.name}</b> <span class="sub">${fmtD(c.date)}</span><div class="sub">${c.km ? round(c.km, 2) + ' km · ' : ''}${c.min} phút${pace ? ' · ' + Math.floor(pace) + ':' + String(Math.round((pace % 1) * 60)).padStart(2, '0') + '/km' : ''} · ~${cardioKcal(c)} kcal</div></div><button class="x" data-a="delCardio" data-id="${c.id}">✕</button></div>`;
+    const t = CARDIO_TYPES.find(x => x.id === c.type) || CARDIO_TYPES[5], pace = c.km && c.min ? c.min / c.km : 0, st = stepsOf(c);
+    return `<div class="item"><div class="sp"><b>${t.name}</b> ${c.src === 'gps' ? '📍' : c.src ? '📥' : ''} <span class="sub">${fmtD(c.date)} ${new Date(c.date).toTimeString().slice(0, 5)}</span><div class="sub">${c.km ? round(c.km, 2) + ' km · ' : ''}${Math.round(c.min)} phút${pace ? ' · ' + fmtPace(pace) + '/km' : ''}${st ? ' · ~' + st.toLocaleString('vi-VN') + ' bước' : ''}${c.hr ? ' · ❤ ' + Math.round(c.hr) : ''} · ~${cardioKcal(c)} kcal</div></div>${c.route ? `<button class="btn sm" data-a="routeView" data-id="${c.id}">Lộ trình</button>` : ''}<button class="x" data-a="delCardio" data-id="${c.id}">✕</button></div>`;
   }).join('');
   const wk = weeksBack(8).map((t, i, a) => ({ label: fmtD(t), v: S.cardio.filter(c => c.date >= t && c.date < t + 7 * DAY).reduce((s, c) => s + (c.km || 0), 0), cur: i === a.length - 1 }));
-  return `${head('Cardio & chạy bộ', '#/train')}<div class="card"><label>Loại</label><select id="c-type">${ts}</select>
+  return `${head('Cardio & chạy bộ', '#/train')}<div id="trk">${trkPanel()}</div>
+  <h2>Ghi tay</h2><div class="card"><label>Loại</label><select id="c-type">${ts}</select>
   <div class="grid2"><div><label>Quãng đường (km)</label><input id="c-km" inputmode="decimal" placeholder="vd 3.5"></div><div><label>Thời gian (phút)</label><input id="c-min" inputmode="decimal" placeholder="vd 25"></div></div>
   <button class="btn pri block mt" data-a="addCardio">Lưu buổi tập</button><div class="sub mt">Người mới nên chạy xen đi bộ, tăng không quá 10% quãng đường mỗi tuần.</div></div>
+  <h2>Nhập từ app hoặc đồng hồ khác</h2><div class="card"><div class="sub">Xuất file GPX hoặc TCX từ Strava, Garmin, Coros, Samsung Health, Google Fit... rồi chọn ở đây. Chọn được nhiều file một lúc.</div><label class="btn block mt" style="margin:12px 0 0">📥 Chọn file GPX / TCX<input type="file" multiple accept=".gpx,.tcx,application/gpx+xml,application/xml,text/xml" data-in="gpx" hidden></label></div>
   <h2>Km mỗi tuần</h2><div class="card">${barChart(wk)}</div><h2>Gần đây</h2><div class="card">${list || '<div class="empty">Chưa có buổi cardio nào.</div>'}</div>`;
 }
 
@@ -582,6 +677,9 @@ function vInsights() {
   const cs = S.cardio, c7 = cs.filter(c => c.date >= now - 7 * DAY), c14 = cs.filter(c => c.date >= now - 14 * DAY && c.date < now - 7 * DAY);
   const k7 = c7.reduce((t, c) => t + (c.km || 0), 0), k14 = c14.reduce((t, c) => t + (c.km || 0), 0), m28 = cs.filter(c => c.date >= now - 28 * DAY).reduce((t, c) => t + c.min, 0) / 4;
   if (k14 > 0 && k7 > k14 * 1.1) add('warn', 'Tăng quãng đường chạy nhanh', `7 ngày qua ${round(k7, 1)} km so với ${round(k14, 1)} km tuần trước (+${Math.round((k7 / k14 - 1) * 100)}%). Quy tắc an toàn là tăng không quá khoảng 10% mỗi tuần.`);
+  const runs8 = cs.filter(c => c.type === 'run' && c.km >= 1 && c.min > 0 && c.date >= now - 56 * DAY).sort((a, b) => a.date - b.date);
+  if (runs8.length >= 4) { const sl = lsSlope(runs8.map(c => ({ t: c.date / DAY, y: c.min / c.km }))) * 28 * 60;
+    add(sl < -5 ? 'good' : 'info', 'Xu hướng pace chạy', sl < -5 ? `Pace đang nhanh dần khoảng ${Math.round(-sl)} giây/km mỗi 4 tuần (${runs8.length} buổi chạy).` : sl > 8 ? `Pace đang chậm dần khoảng ${Math.round(sl)} giây/km mỗi 4 tuần. Có thể do mệt, thời tiết nóng hoặc chạy dài hơn; hãy kiểm tra giấc ngủ và nghỉ ngơi.` : `Pace gần như ổn định (${runs8.length} buổi chạy gần đây).`); }
   if (cs.length >= 2) add(m28 >= 150 ? 'good' : 'info', 'Cardio hằng tuần', `Trung bình ${Math.round(m28)} phút/tuần trong 4 tuần. Khuyến nghị sức khoẻ chung là từ 150 phút/tuần cường độ vừa.`);
 
   /* Hiển thị */
@@ -601,6 +699,9 @@ function vInsights() {
   if (wpts.length >= 2) charts.push(`<h2>Xu hướng cân nặng (6 tuần)</h2><div class="card">${lineChart(wpts.map(b => ({ x: fmtD(b.date), y: b.weight })))}</div>`);
   if (fd.length) { const days = Array.from({ length: 10 }, (_, i) => now - (9 - i) * DAY); charts.push(`<h2>Calo 10 ngày gần nhất</h2><div class="card">${barChart(days.map((t, i) => { const k = foodTotal(dk(t)).k; return { label: fmtD(t), v: Math.round(k), cur: k > 0 && Math.abs(k - T.kcal) / T.kcal <= .1 }; }))}<div class="sub">Mục tiêu ${T.kcal} kcal. Cột nổi bật là ngày nằm trong ±10%.</div></div>`); }
   if (ss.length >= 4) { const wd = [0, 0, 0, 0, 0, 0, 0]; ss.forEach(s => wd[(new Date(s.date).getDay() + 6) % 7]++); charts.push(`<h2>Bạn hay tập vào thứ mấy</h2><div class="card">${barChart(['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((l, i) => ({ label: l, v: wd[i], cur: wd[i] === Math.max(...wd) })))}</div>`); }
+  if (runs8.length >= 3) charts.push(`<h2>Pace chạy theo buổi (phút/km, thấp là nhanh)</h2><div class="card">${lineChart(runs8.map(c => ({ x: fmtD(c.date), y: round(c.min / c.km, 2) })))}</div>`);
+  const stp = weeksBack(8).map((t, i, a) => ({ label: fmtD(t), v: cs.filter(c => c.date >= t && c.date < t + 7 * DAY).reduce((u, c) => u + stepsOf(c), 0) / 1000, cur: i === a.length - 1 }));
+  if (stp.some(x => x.v > 0)) charts.push(`<h2>Bước chân ước tính mỗi tuần (nghìn bước)</h2><div class="card">${barChart(stp, 'k')}<div class="sub">Tính từ quãng đường cardio đi bộ và chạy, không gồm bước đi trong ngày.</div></div>`);
   return `<h2>Chỉ số chính</h2>${kp}${unlock}<h2>Nhận định của chuyên gia</h2>${cards || '<div class="empty">Chưa có nhận định.</div>'}<div class="sub" style="margin:6px 4px">Nhận định dựa trên quy tắc phổ biến trong huấn luyện và dinh dưỡng thể thao, mang tính tham khảo, không thay thế tư vấn y tế hay huấn luyện viên.</div>${charts.join('')}`;
 }
 
@@ -707,6 +808,8 @@ function reportData(ws) {
   D.low = ss.length >= 2 ? Object.keys(GROUPS).filter(g => gs[g] < GROUPS[g] * 0.6) : [];
   const cs = S.cardio.filter(x => inW(x.date)), pcs = S.cardio.filter(x => inW(x.date, pws, ws));
   D.km = sum(cs, x => x.km || 0); D.pkm = sum(pcs, x => x.km || 0); D.cmin = sum(cs, x => x.min); D.cn = cs.length;
+  D.steps = sum(cs, stepsOf); const runs = cs.filter(x => x.type === 'run' && x.km > 0 && x.min > 0), pruns = pcs.filter(x => x.type === 'run' && x.km > 0 && x.min > 0), pkr = sum(pruns, x => x.km);
+  D.runKm = sum(runs, x => x.km); D.runPace = D.runKm ? sum(runs, x => x.min) / D.runKm : 0; D.pRunPace = pkr ? sum(pruns, x => x.min) / pkr : 0; D.longRun = runs.length ? Math.max(...runs.map(x => x.km)) : 0;
   const days = Array.from({ length: 7 }, (_, i) => ws + i * DAY), pdays = days.map(t => t - 7 * DAY);
   D.days = days.map(t => { const k = dk(t); return { t, k, train: S.sessions.some(x => dk(x.date) === k), food: foodOf(k).length > 0, water: (S.water[k] || 0) > 0, weigh: S.body.some(b => dk(b.date) === k && b.weight), future: t > now, kc: foodTotal(k).k, pr: foodTotal(k).p, w: S.water[k] || 0 }; });
   const valid = D.days.filter(d => d.kc >= 800), pvalid = pdays.map(t => foodTotal(dk(t))).filter(f => f.k >= 800);
@@ -731,6 +834,8 @@ function reportData(ws) {
   if (D.kHit !== null && D.kHit >= .7) good.push(`Calo sát mục tiêu ở ${Math.round(D.kHit * 100)}% số ngày ghi đủ.`);
   if (D.pHit !== null && D.pHit >= .7) good.push(`Đủ đạm ở ${Math.round(D.pHit * 100)}% số ngày.`);
   if (D.pvol > 0 && D.vol > D.pvol * 1.05) good.push(`Khối lượng tạ tăng ${Math.round((D.vol / D.pvol - 1) * 100)}% so với tuần trước.`);
+  if (D.runPace && D.pRunPace && D.runPace < D.pRunPace * 0.97) good.push(`Pace chạy nhanh hơn tuần trước ${Math.round((D.pRunPace - D.runPace) * 60)} giây/km (${fmtPace(D.runPace)}/km).`);
+  if (D.pkm > 0 && D.km > D.pkm * 1.3) bad.push(`Quãng đường cardio tăng ${Math.round((D.km / D.pkm - 1) * 100)}% so với tuần trước. Nên giữ mức tăng khoảng 10% để tránh chấn thương.`);
   if (ss.length < P.weeklyGoal) { bad.push(`Mới ${ss.length}/${P.weeklyGoal} buổi tạ.`); const nx = nextRoutine(); next.push(`Tập đủ ${P.weeklyGoal} buổi${nx ? `, bắt đầu bằng buổi "${nx.name}"` : ''}. Đặt giờ cố định trong phần Nhắc lịch tập.`); }
   if (D.logged < 5 && !D.partial) { bad.push(`Chỉ ghi ăn uống ${D.logged}/7 ngày nên số liệu dinh dưỡng chưa chắc chắn.`); next.push('Ghi ăn uống đủ các ngày (kể cả cuối tuần) để phân tích chính xác hơn.'); }
   if (D.valid >= 3 && D.ap < T.protein * .9) { bad.push(`Đạm trung bình ${Math.round(D.ap)}g, thấp hơn mục tiêu ${T.protein}g.`); next.push(`Thêm khoảng ${Math.round(T.protein - D.ap)}g đạm mỗi ngày: trứng, sữa chua, ức gà, đậu hũ hoặc whey.`); }
@@ -751,7 +856,7 @@ function reportText(D) {
   const L = [`FitTrack · Tuần ${fmtD(D.ws)} – ${fmtD(D.we - DAY)}${D.partial ? ' (tạm tính)' : ''}`];
   if (D.score !== null) L.push(`Điểm tuần: ${D.score}/100`);
   L.push(`Tập: ${D.ss.length}/${D.P.weeklyGoal} buổi, ${D.sets} set, tổng tạ ${round(D.vol / 1000, 1)} tấn${D.pvol ? ' (' + pctCh(D.vol, D.pvol) + ' so với tuần trước)' : ''}${D.prs.length ? ', ' + D.prs.length + ' kỷ lục' : ''}`);
-  if (D.cn) L.push(`Cardio: ${D.cn} buổi, ${round(D.km, 1)} km, ${Math.round(D.cmin)} phút`);
+  if (D.cn) L.push(`Cardio: ${D.cn} buổi, ${round(D.km, 1)} km, ${Math.round(D.cmin)} phút${D.steps ? ', ~' + D.steps.toLocaleString('vi-VN') + ' bước' : ''}${D.runPace ? ', pace chạy ' + fmtPace(D.runPace) + '/km' : ''}`);
   if (D.valid) L.push(`Ăn uống: trung bình ${Math.round(D.ak)} kcal (mục tiêu ${D.T.kcal}), đạm ${Math.round(D.ap)}g (mục tiêu ${D.T.protein}g), ghi ${D.logged}/7 ngày`);
   if (D.bw.length) L.push(`Cân nặng: trung bình ${round(D.wavg, 1)} kg${D.pwavg ? ' (' + (D.wavg - D.pwavg >= 0 ? '+' : '') + round(D.wavg - D.pwavg, 1) + ' kg so với tuần trước)' : ''}`);
   L.push('Ưu tiên tuần tới:'); D.next.forEach((n, i) => L.push(`${i + 1}. ${n}`));
@@ -768,7 +873,7 @@ function vReport(key) {
   const rhythm = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center">${D.days.map((d, i) => `<div style="opacity:${d.future ? .35 : 1}"><div class="sub">${['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'][i]}</div><div>${d.train ? '🏋️' : '·'}</div><div>${d.food ? '🍚' : '·'}</div><div>${d.water ? '💧' : '·'}</div><div>${d.weigh ? '⚖️' : '·'}</div></div>`).join('')}</div><div class="sub mt">🏋️ tập · 🍚 ghi ăn · 💧 ghi nước · ⚖️ cân</div>`;
   const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
   const train = `<div class="grid2">${stat(D.ss.length + '/' + D.P.weeklyGoal, 'Buổi tạ')}${stat(round(D.vol / 1000, 1) + 't', 'Tổng tạ ' + (D.pvol ? pctCh(D.vol, D.pvol) : ''))}${stat(D.sets, 'Tổng số set')}${stat(D.ss.length ? Math.round(D.dur) + ' phút' : '—', 'Thời lượng TB')}</div>
-    <div class="sub mt">${D.feel ? 'Cảm giác TB: ' + ['😫', '😐', '🙂', '💪'][Math.max(0, Math.min(3, Math.round(D.feel) - 1))] + ' · ' : ''}${D.cn ? `Cardio: ${D.cn} buổi, ${round(D.km, 1)} km, ${Math.round(D.cmin)} phút ${D.pkm ? pctCh(D.km, D.pkm) : ''}` : 'Chưa ghi cardio'}</div>
+    <div class="sub mt">${D.feel ? 'Cảm giác TB: ' + ['😫', '😐', '🙂', '💪'][Math.max(0, Math.min(3, Math.round(D.feel) - 1))] + ' · ' : ''}${D.cn ? `Cardio: ${D.cn} buổi, ${round(D.km, 1)} km, ${Math.round(D.cmin)} phút ${D.pkm ? pctCh(D.km, D.pkm) : ''}${D.steps ? ' · ~' + D.steps.toLocaleString('vi-VN') + ' bước' : ''}${D.runPace ? ' · pace chạy ' + fmtPace(D.runPace) + '/km' + (D.pRunPace ? (D.runPace <= D.pRunPace ? ' (nhanh hơn tuần trước)' : ' (chậm hơn tuần trước)') : '') : ''}${D.longRun ? ' · chạy dài nhất ' + round(D.longRun, 1) + ' km' : ''}` : 'Chưa ghi cardio'}</div>
     ${D.prs.length ? `<div class="hint">🏆 Kỷ lục: ${D.prs.map(p => esc(exOf(p.id).name.replace(/ \(.*/, '')) + ' +' + round(p.pct, 1) + '%').join(', ')}</div>` : ''}`;
   const food = D.valid ? `<div class="grid2">${stat(Math.round(D.ak), 'kcal TB/ngày (mục tiêu ' + D.T.kcal + ')')}${stat(Math.round(D.ap) + 'g', 'Đạm TB (mục tiêu ' + D.T.protein + 'g)')}${stat(D.logged + '/7', 'Ngày có ghi ăn')}${stat(D.wDays ? Math.round(D.aw) + ' ml' : '—', 'Nước TB/ngày')}</div>${barChart(D.days.map((d, i) => ({ label: ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'][i], v: Math.round(d.kc), cur: d.kc > 0 && Math.abs(d.kc - D.T.kcal) / D.T.kcal <= .1 })))}<div class="sub">Cột nổi bật là ngày nằm trong ±10% mục tiêu ${D.T.kcal} kcal.${D.pak ? ' Tuần trước trung bình ' + Math.round(D.pak) + ' kcal.' : ''}</div>` : `<div class="empty">Chưa đủ dữ liệu ăn uống (cần ít nhất 3 ngày ghi từ 800 kcal).</div>`;
   const body = D.bw.length ? `<div class="grid2">${stat(round(D.wavg, 1) + ' kg', 'Cân TB tuần (' + D.bw.length + ' lần cân)')}${stat(D.pwavg ? (D.wavg - D.pwavg >= 0 ? '+' : '') + round(D.wavg - D.pwavg, 1) + ' kg' : '—', 'So với tuần trước')}</div>${D.waist ? `<div class="sub mt">Vòng eo gần nhất: ${D.waist.waist} cm${D.pwaist ? ' (' + (D.waist.waist - D.pwaist.waist >= 0 ? '+' : '') + round(D.waist.waist - D.pwaist.waist, 1) + ' cm so với trước đó)' : ''}</div>` : ''}` : '<div class="empty">Tuần này chưa cân. Nên cân 2–3 lần/tuần, cùng giờ buổi sáng.</div>';
@@ -848,7 +953,7 @@ function render() {
     case 'profile': html = vProfile(); break; case 'health': html = vHealth(); break; case 'report': html = vReport(b); break; default: html = vHome();
   }
   if (html !== '') { $('#app').innerHTML = html; window.scrollTo(0, 0); if (a === 'body') loadPhotos(); if (a === 'health') loadDocs(); }
-  drawNav(route);
+  drawNav(route); trkTick();
 }
 window.addEventListener('hashchange', render);
 
@@ -882,7 +987,30 @@ const A = {
     const km = num($('#c-km').value), min = num($('#c-min').value); if (!min) return toast('Nhập thời gian (phút)');
     S.cardio.push({ id: uid(), date: Date.now(), type: $('#c-type').value, km, min }); save(); toast('Đã lưu'); rerender();
   },
-  delCardio(el) { S.cardio = S.cardio.filter(c => c.id !== el.dataset.id); save(); rerender(); },
+  delCardio(el) { S.cardio = S.cardio.filter(c => c.id !== el.dataset.id); try { idbDo('readwrite', s => s.delete('route-' + el.dataset.id)); } catch (e) {} save(); rerender(); },
+  async trkStart() {
+    if (!navigator.geolocation) return toast('Trình duyệt này không hỗ trợ GPS');
+    TR = { type: $('#trk-type').value, start: Date.now(), points: [], dist: 0, pausedMs: 0, status: 'tracking', gap: false }; trkSave(true); trkWatch(); wlOn(); lastTouch = Date.now(); rerender();
+  },
+  trkPause() { TR.status = 'paused'; TR.pauseStart = Date.now(); stopWatch(); wlOff(); trkSave(true); rerender(); },
+  trkResume() { const n = Date.now(); TR.pausedMs = (TR.pausedMs || 0) + (TR.status === 'paused' ? n - TR.pauseStart : n - (TR.seen || n)); TR.status = 'tracking'; TR.gap = true; delete TR.pauseStart; trkWatch(); wlOn(); lastTouch = n; trkSave(true); rerender(); },
+  trkDiscard() { if (!confirm('Bỏ buổi này? Dữ liệu sẽ mất.')) return; stopWatch(); wlOff(); hideDim(); trkClear(); rerender(); },
+  async trkFinish() {
+    if (!confirm('Kết thúc và lưu buổi này?')) return; const st = trkStats(), type = TR.type, start = TR.start, pts = TR.points, gaps = TR.interrupted; stopWatch(); wlOff(); hideDim();
+    const km = round(st.km, 2), min = Math.max(1, Math.round(st.el / 60)); trkClear();
+    if (km < 0.05) { toast('Quãng đường quá ngắn (dưới 50 m), đã bỏ buổi này'); return rerender(); }
+    const id = uid(), route = routeOf(pts); S.cardio.push({ id, date: start, type, km, min, steps: st.steps, src: 'gps', ...(route.length > 1 ? { route: 1 } : {}), ...(gaps ? { gaps: 1 } : {}) }); save();
+    if (route.length > 1) { try { await idbDo('readwrite', s => s.put({ id: 'route-' + id, kind: 'route', date: start, pts: route })); } catch (e) {} }
+    toast(`Đã lưu ${km} km · ${fmtPace(min / km)}/km`); rerender();
+  },
+  dimNow: showDim,
+  async routeView(el) { try { const r = await idbDo('readonly', s => s.get('route-' + el.dataset.id)); const c = S.cardio.find(x => x.id === el.dataset.id); modal(`<div class="row"><b class="sp">Lộ trình ${c ? fmtD(c.date) : ''}</b><button class="btn sm" data-a="closeModal">Đóng</button></div><div class="mt">${r && r.pts ? routeSvg(r.pts) : '<div class="empty">Không có lộ trình trên máy này (lộ trình không đồng bộ giữa các máy).</div>'}</div><div class="sub mt">🟢 điểm xuất phát · 🔴 điểm kết thúc. Lộ trình chỉ lưu trên máy ghi.</div>`); } catch (e) { toast('Không đọc được lộ trình'); } },
+  async impDo() {
+    const sel = IMP.filter(a => a.on && !a.bad); let n = 0;
+    for (const a of sel) { const id = uid(), min = Math.max(1, Math.round(a.min)), km = round(a.km, 2); S.cardio.push({ id, date: a.start, type: a.type, km, min, steps: strideOf(a.type) ? Math.round(km * 1000 / strideOf(a.type)) : 0, src: 'file', ...(a.hr ? { hr: Math.round(a.hr) } : {}), ...(a.route.length > 1 ? { route: 1 } : {}) }); n++;
+      if (a.route.length > 1) { try { await idbDo('readwrite', s => s.put({ id: 'route-' + id, kind: 'route', date: a.start, pts: a.route })); } catch (e) {} } }
+    S.cardio.sort((a, b) => a.date - b.date); save(); closeModal(); toast(n ? `Đã nhập ${n} buổi` : 'Chưa chọn buổi nào'); rerender();
+  },
   addBody() {
     const weight = num($('#b-w').value), waist = num($('#b-waist').value), fat = num($('#b-fat').value); if (!weight && !waist && !fat) return toast('Nhập ít nhất một số đo');
     S.body.push({ id: uid(), date: Date.now(), weight, waist, fat }); if (weight) S.profile.weight = weight; save(); toast('Đã lưu'); rerender();
@@ -1011,6 +1139,15 @@ function onInput(e, committed) {
   else if (committed && k === 'wtime') { const w = (S.waterLog[foodDay] || []).find(x => x.id === el.dataset.id); if (w && el.value) { w.t = el.value; save(); } }
   else if (committed && k === 'wstart') { const v = new Date(el.value).getTime(); if (v && v <= Date.now() + 60000 && S.active) { S.active.start = v; save(); } }
   else if (committed && k === 'ftime') { const f = foodOf(foodDay)[+el.dataset.i]; if (f && el.value) { f.t = el.value; save(); } }
+  else if (committed && k === 'dimAuto') { try { localStorage.setItem('fittrack-dim', el.checked ? '1' : '0'); } catch (e) {} }
+  else if (committed && k === 'impck') { IMP[+el.dataset.i].on = el.checked; }
+  else if (committed && k === 'imptype') { IMP[+el.dataset.i].type = el.value; }
+  else if (committed && k === 'gpx') {
+    const fls = [...el.files]; if (!fls.length) return; IMP = [];
+    Promise.all(fls.map(async f => { try { return parseActivities(await f.text(), f.name); } catch (e) { toast('Không đọc được ' + f.name + ' (cần GPX hoặc TCX)'); return []; } })).then(r => {
+      IMP = r.flat().map(a => ({ ...a, bad: !a.start || a.km < 0.05 || a.min <= 0, dup: !!a.start && S.cardio.some(c => Math.abs(c.date - a.start) < 120000) })); IMP.forEach(a => a.on = !a.bad && !a.dup); impModal();
+    });
+  }
   else if (committed && k === 'hMarker') { window.__hm = el.value; rerender(); }
   else if (committed && k === 'hRecheck') { S.health.recheck = el.value; save(); }
   else if (committed && k === 'hdoc') {
