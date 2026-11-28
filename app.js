@@ -300,7 +300,7 @@ function vRoutine(id) {
 }
 function openPicker(cb) { pickCb = cb; pickQ = ''; drawPicker(); }
 function drawPicker() {
-  const q = fold(pickQ), list = allEx().filter(e => !q || fold(e.name + e.g).includes(q));
+  const q = fold(pickQ), list = allEx().filter(e => !q || hitQ(e.name + ' ' + e.g, q));
   modal(`<div class="row"><h3 class="sp">Chọn bài tập</h3><button class="btn sm" data-a="closeModal">Đóng</button></div><input id="pq" class="mt" placeholder="Tìm bài hoặc nhóm cơ..." value="${esc(pickQ)}" data-in="pq">
   <div id="plist">${pickList(list)}</div>`);
 }
@@ -446,12 +446,13 @@ function vBodyPhotos() {
 /* ---------- Ăn uống ---------- */
 const fold = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
 function waterAdd(ml, t, day = foodDay) { S.water[day] = Math.max(0, (S.water[day] || 0) + ml); (S.waterLog[day] = S.waterLog[day] || []).push({ id: uid(), t, ml }); }
+const hitQ = (text, q) => { const t = fold(q).split(/\s+/).filter(Boolean), h = fold(text); return t.every(w => h.includes(w)); };
 const foodPool = () => [...S.customFoods.map(f => ({ ...f, mine: 1 })), ...FOODS];
 let foodSel = null;
 function openFood(name) {
   const f = foodPool().find(x => x.n === name); if (!f) return; foodSel = f;
   modal(`<h3>${esc(f.n)}</h3><div class="sub">${f.g ? `${round(f.k / f.g * 100)} kcal · ${round(f.p / f.g * 100, 1)}g đạm mỗi 100${f.ml ? 'ml' : 'g'} (1 khẩu phần ≈ ${f.g}${f.ml ? 'ml' : 'g'})` : `${f.k} kcal · ${f.p}g đạm mỗi khẩu phần`}</div>
-  ${f.w ? '<div class="sub">Gần như không calo, được cộng vào mục nước uống.</div>' : ''}${(f.pur || f.alc) && uricHigh() ? '<div class="hint">⚠️ Acid uric của bạn đang cao: nên hạn chế món/đồ uống này (nhiều purin hoặc đường fructose, hoặc cồn).</div>' : ''}${f.alc ? '<div class="hint">Cồn cộng calo "rỗng" và làm chậm phục hồi cơ, nên hạn chế khi đang giảm mỡ hoặc tăng cơ.</div>' : ''}<div class="grid2"><div><label>${f.ml ? 'Số ly/lon/chai' : 'Số khẩu phần'}</label><input id="fm-q" inputmode="decimal" data-in="fm" data-f="q" value="1"></div>${f.g ? `<div><label>${f.ml ? 'Hoặc nhập ml' : 'Hoặc nhập gam'}</label><input id="fm-g" inputmode="decimal" data-in="fm" data-f="g" value="${f.g}"></div>` : ''}</div>
+  ${f.w ? '<div class="sub">Gần như không calo, được cộng vào mục nước uống.</div>' : ''}${f.ua && uricHigh() ? '<div class="hint">🌿 Hợp lý khi acid uric cao: ít purin, ít đường fructose, nhiều rau và nước. Đừng thêm đường hay mật ong. Nước ép chỉ hỗ trợ, không thay thế điều trị; nước lọc vẫn là lựa chọn số một.</div>' : ''}${f.fru && uricHigh() ? '<div class="hint">⚠️ Nhiều đường fructose từ trái cây ngọt hoặc đường thêm: fructose có thể làm tăng acid uric. Nên uống ly nhỏ (khoảng 200 ml) và không thường xuyên.</div>' : ''}${(f.pur || f.alc) && uricHigh() ? '<div class="hint">⚠️ Acid uric của bạn đang cao: nên hạn chế món/đồ uống này (nhiều purin hoặc đường fructose, hoặc cồn).</div>' : ''}${f.alc ? '<div class="hint">Cồn cộng calo "rỗng" và làm chậm phục hồi cơ, nên hạn chế khi đang giảm mỡ hoặc tăng cơ.</div>' : ''}<div class="grid2"><div><label>${f.ml ? 'Số ly/lon/chai' : 'Số khẩu phần'}</label><input id="fm-q" inputmode="decimal" data-in="fm" data-f="q" value="1"></div>${f.g ? `<div><label>${f.ml ? 'Hoặc nhập ml' : 'Hoặc nhập gam'}</label><input id="fm-g" inputmode="decimal" data-in="fm" data-f="g" value="${f.g}"></div>` : ''}</div>
   <div class="row mt"><label style="margin:0">Giờ ăn</label><input id="fm-t" type="time" value="${foodDay === dk() ? nowT() : '12:00'}" style="width:auto;flex:1"></div><div class="stat mt" id="fm-pre"></div><button class="btn pri block mt" data-a="foodAdd">Thêm vào ${dayLabel(foodDay).toLowerCase()}</button><button class="btn ghost block" data-a="closeModal">Đóng</button>`);
   fmUpdate('q');
 }
@@ -461,10 +462,10 @@ function fmUpdate(src) {
   const m = num(q.value); $('#fm-pre').innerHTML = f.w ? `<b>${round(f.g * m)} ml nước</b>` : `<b>${Math.round(f.k * m)} kcal</b><span> · ${round(f.p * m, 1)}g đạm</span>`;
 }
 function foodButtons() {
-  const q = fold(foodQ); let all = foodPool().filter(f => !q || fold(f.n).includes(q));
-  if (foodCat === 'drink') all = all.filter(f => f.ml); else if (foodCat === 'alc') all = all.filter(f => f.alc); else if (foodCat === 'snack') all = all.filter(f => f.snk && !f.ml);
+  const q = fold(foodQ); let all = foodPool().filter(f => !q || hitQ(f.n, q));
+  if (foodCat === 'drink') all = all.filter(f => f.ml); else if (foodCat === 'alc') all = all.filter(f => f.alc); else if (foodCat === 'snack') all = all.filter(f => f.snk && !f.ml); else if (foodCat === 'mix') all = all.filter(f => f.mix);
   const list = (q || foodCat) ? all : all.slice(0, 14);
-  return list.map(f => `<button class="btn sm" data-a="addFood" data-n="${esc(f.n)}" style="margin:3px 3px 0 0">${f.mine ? '⭐ ' : ''}${esc(f.n)} · ${f.k}</button>`).join('') || '<span class="sub">Không có, hãy thêm món riêng bên dưới.</span>';
+  return list.map(f => `<button class="btn sm" data-a="addFood" data-n="${esc(f.n)}" style="margin:3px 3px 0 0">${f.mine ? '⭐ ' : f.ua && uricHigh() ? '🌿 ' : ''}${esc(f.n)} · ${f.k}</button>`).join('') || '<span class="sub">Không có, hãy thêm món riêng bên dưới.</span>';
 }
 function vFood() {
   const t = targets(), tot = foodTotal(foodDay), items = foodOf(foodDay), wt = S.water[foodDay] || 0, isToday = foodDay === dk();
@@ -475,7 +476,7 @@ function vFood() {
   <div class="row"><b>${Math.round(tot.p)}g</b><span class="sub">/ ${t.protein}g đạm</span></div><div class="bar"><i style="width:${Math.min(100, tot.p / t.protein * 100)}%"></i></div>
   <div class="row"><b>${wt} ml</b><span class="sub">/ ${t.water * 1} ml nước</span><span class="sp"></span><button class="btn sm" data-a="water" data-v="250">+250</button><button class="btn sm" data-a="water" data-v="-250">−</button></div><div class="bar"><i style="width:${Math.min(100, wt / t.water * 100)}%"></i></div>${(() => { const wl = [...(S.waterLog[foodDay] || [])].sort((a, b) => a.t.localeCompare(b.t)), rest = wt - wl.reduce((u, w) => u + w.ml, 0); return wl.length || rest > 0 ? `<div class="mt">${wl.map(w => `<div class="row" style="padding:3px 0"><input type="time" class="tin" data-in="wtime" data-id="${w.id}" value="${w.t}"><b>${w.ml} ml</b><span class="sp"></span><button class="x" data-a="waterDel" data-id="${w.id}" aria-label="Xoá">✕</button></div>`).join('')}${rest > 0 ? `<div class="sub">Ngoài ra ${rest} ml chưa ghi giờ</div>` : ''}</div>` : ''; })()}</div>
   <h2>Đã ăn</h2><div class="card">${items.map((f, i) => ({ f, i })).sort((a, b) => (a.f.t || '99').localeCompare(b.f.t || '99')).map(({ f, i }) => `<div class="item"><div class="sp"><b>${esc(f.n)}</b><div class="sub">${Math.round(f.k * f.q)} kcal · ${round(f.p * f.q, 1)}g đạm</div><input type="time" class="tin" data-in="ftime" data-i="${i}" value="${f.t || ''}" aria-label="Giờ ăn"></div><button class="btn sm" data-a="qty" data-i="${i}" data-v="-0.5">−</button><b>${f.gr ? f.gr + (f.ml ? ' ml' : ' g') : round(f.q, 2)}</b><button class="btn sm" data-a="qty" data-i="${i}" data-v="0.5">+</button><button class="x" data-a="delFood" data-i="${i}">✕</button></div>`).join('') || '<div class="empty">Chưa ghi món nào.</div>'}</div>
-  <h2>Thêm món</h2><div class="card"><div class="tabs">${[['', 'Gợi ý'], ['snack', '🍞 Ăn sáng, ăn vặt'], ['drink', '🥤 Đồ uống'], ['alc', '🍺 Rượu bia'], ['all', 'Tất cả']].map(c => `<button class="btn sm ${foodCat === c[0] ? 'on' : ''}" data-a="cat" data-c="${c[0]}">${c[1]}</button>`).join('')}</div><input id="fq" data-in="fq" placeholder="Tìm: cơm, phở, ức gà..." value="${esc(foodQ)}"><div id="flist" class="mt">${shown}</div>
+  <h2>Thêm món</h2><div class="card"><div class="tabs">${[['', 'Gợi ý'], ['snack', '🍞 Ăn sáng, ăn vặt'], ['drink', '🥤 Đồ uống'], ['mix', '🥒 Nước ép mix'], ['alc', '🍺 Rượu bia'], ['all', 'Tất cả']].map(c => `<button class="btn sm ${foodCat === c[0] ? 'on' : ''}" data-a="cat" data-c="${c[0]}">${c[1]}</button>`).join('')}</div><input id="fq" data-in="fq" placeholder="Tìm: cơm, phở, ức gà..." value="${esc(foodQ)}"><div id="flist" class="mt">${shown}</div>
   <label>Món riêng</label><input id="f-n" placeholder="Tên món"><div class="grid3"><div><label>kcal</label><input id="f-k" inputmode="decimal"></div><div><label>Đạm (g)</label><input id="f-p" inputmode="decimal"></div><div><label>Gam/phần</label><input id="f-g" inputmode="decimal" placeholder="tuỳ chọn"></div></div><button class="btn block mt" data-a="addCustomFood">Thêm món này</button></div>
   ${S.customFoods.length ? `<h2>Món của tôi</h2><div class="card">${S.customFoods.map((f, i) => `<div class="item"><div class="sp"><b>${esc(f.n)}</b><div class="sub">${f.k} kcal · ${f.p}g đạm</div></div><button class="x" data-a="delCustomFood" data-i="${i}">✕</button></div>`).join('')}</div>` : ''}<div class="sub">Số liệu calo/đạm là ước tính theo khẩu phần phổ biến. Điều chỉnh theo thực tế của bạn.</div>`;
 }
@@ -746,6 +747,7 @@ function vHealth() {
     <ul class="sub" style="margin:6px 0 0;padding-left:18px"><li><b>Uống nước:</b> khoảng 2–2,5 lít/ngày, chia đều, nhất là quanh buổi tập (trừ khi bác sĩ hạn chế).</li>
     <li><b>Hạn chế:</b> bia, rượu; nước ngọt, nước mía, nước ép nhiều đường; nội tạng, hải sản (tôm, cua, sò, mực), cá cơm, cá mòi; nước hầm xương và lẩu đậm; thịt đỏ nhiều.</li>
     <li><b>Ưu tiên:</b> rau, sữa và sữa chua ít béo, trứng, đậu hũ, ngũ cốc nguyên hạt; thịt gà hoặc heo nạc với lượng vừa.</li>
+    <li><b>Nước ép:</b> chọn loại nhiều rau (dưa leo, cần tây, bí đao), ít trái cây ngọt, không đường, không mật ong; cherry và vitamin C có một ít bằng chứng hỗ trợ nhưng không thay thế điều trị. Nước ép cam, táo, dứa, mía nhiều fructose có thể làm acid uric tăng, nên uống ít.</li>
     <li><b>Giảm cân từ từ:</b> nhịn ăn hoặc giảm cân quá nhanh có thể làm acid uric tăng tạm thời.</li>
     <li><b>Khi tập:</b> tránh để mất nước, không tập đến kiệt sức. Nếu khớp đột ngột sưng, đỏ, nóng, đau (nghi cơn gout), nghỉ tập khớp đó và đi khám.</li>
     <li><b>Theo dõi:</b> hỏi bác sĩ về thời điểm xét nghiệm lại và có cần dùng thuốc hay không.</li></ul></div>`);
@@ -1127,7 +1129,7 @@ function onInput(e, committed) {
   else if (k === 'ws') { const s = S.active.exs[+el.dataset.i].sets[+el.dataset.j]; s[el.dataset.f] = el.value; save(); }
   else if (k === 'fm') fmUpdate(el.dataset.f);
   else if (k === 'rt') { curRoutine()[el.dataset.f] = el.value; save(); }
-  else if (k === 'pq') { pickQ = el.value; $('#plist').innerHTML = pickList(allEx().filter(x => !pickQ || fold(x.name + x.g).includes(fold(pickQ)))); }
+  else if (k === 'pq') { pickQ = el.value; $('#plist').innerHTML = pickList(allEx().filter(x => !pickQ || hitQ(x.name + ' ' + x.g, pickQ))); }
   else if (k === 'fq') { foodQ = el.value; $('#flist').innerHTML = foodButtons(); }
   else if (committed && k === 'pf') { const f = el.dataset.f; S.profile[f] = el.dataset.s ? el.value : num(el.value); S.profile.weight = S.profile.weight || 70; save(); const t = targets(); if ($('#tg-k')) { $('#tg-k').textContent = t.kcal; $('#tg-t').textContent = t.tdee; $('#tg-p').textContent = t.protein + 'g'; } }
   else if (committed && k === 'photo') {
