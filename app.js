@@ -453,7 +453,7 @@ function openFood(name) {
   const f = foodPool().find(x => x.n === name); if (!f) return; foodSel = f;
   modal(`<h3>${esc(f.n)}</h3><div class="sub">${f.g ? `${round(f.k / f.g * 100)} kcal · ${round(f.p / f.g * 100, 1)}g đạm mỗi 100${f.ml ? 'ml' : 'g'} (1 khẩu phần ≈ ${f.g}${f.ml ? 'ml' : 'g'})` : `${f.k} kcal · ${f.p}g đạm mỗi khẩu phần`}</div>
   ${f.w ? '<div class="sub">Gần như không calo, được cộng vào mục nước uống.</div>' : ''}${f.ua && uricHigh() ? '<div class="hint">🌿 Hợp lý khi acid uric cao: ít purin, ít đường fructose, nhiều rau và nước. Đừng thêm đường hay mật ong. Nước ép chỉ hỗ trợ, không thay thế điều trị; nước lọc vẫn là lựa chọn số một.</div>' : ''}${f.fru && uricHigh() ? '<div class="hint">⚠️ Nhiều đường fructose từ trái cây ngọt hoặc đường thêm: fructose có thể làm tăng acid uric. Nên uống ly nhỏ (khoảng 200 ml) và không thường xuyên.</div>' : ''}${(f.pur || f.alc) && uricHigh() ? '<div class="hint">⚠️ Acid uric của bạn đang cao: nên hạn chế món/đồ uống này (nhiều purin hoặc đường fructose, hoặc cồn).</div>' : ''}${f.alc ? '<div class="hint">Cồn cộng calo "rỗng" và làm chậm phục hồi cơ, nên hạn chế khi đang giảm mỡ hoặc tăng cơ.</div>' : ''}<div class="grid2"><div><label>${f.ml ? 'Số ly/lon/chai' : 'Số khẩu phần'}</label><input id="fm-q" inputmode="decimal" data-in="fm" data-f="q" value="1"></div>${f.g ? `<div><label>${f.ml ? 'Hoặc nhập ml' : 'Hoặc nhập gam'}</label><input id="fm-g" inputmode="decimal" data-in="fm" data-f="g" value="${f.g}"></div>` : ''}</div>
-  <div class="row mt"><label style="margin:0">Giờ ăn</label><input id="fm-t" type="time" value="${foodDay === dk() ? nowT() : '12:00'}" style="width:auto;flex:1"></div><div class="stat mt" id="fm-pre"></div><button class="btn pri block mt" data-a="foodAdd">Thêm vào ${dayLabel(foodDay).toLowerCase()}</button><button class="btn ghost block" data-a="closeModal">Đóng</button>`);
+  <div class="row mt"><label style="margin:0">Giờ ăn</label><input id="fm-t" type="time" value="${nowT()}" style="width:auto;flex:1"></div><div class="stat mt" id="fm-pre"></div><button class="btn pri block mt" data-a="foodAdd">Thêm vào ${dayLabel(foodDay).toLowerCase()}</button><button class="btn ghost block" data-a="closeModal">Đóng</button>`);
   fmUpdate('q');
 }
 function fmUpdate(src) {
@@ -1031,14 +1031,14 @@ const A = {
   },
   addCustomFood() {
     const n = $('#f-n').value.trim(), k = num($('#f-k').value), p = num($('#f-p').value); if (!n || !k) return toast('Nhập tên và kcal');
-    if (foodPool().some(x => x.n.toLowerCase() === n.toLowerCase())) return toast('Món này đã có'); const g = num($('#f-g').value); S.customFoods.push({ n, k, p, ...(g ? { g } : {}) }); (S.food[foodDay] = S.food[foodDay] || []).push({ n, k, p, t: foodDay === dk() ? nowT() : '12:00', q: 1, ...(g ? { sg: g, gr: g } : {}) }); save(); rerender();
+    if (foodPool().some(x => x.n.toLowerCase() === n.toLowerCase())) return toast('Món này đã có'); const g = num($('#f-g').value); S.customFoods.push({ n, k, p, ...(g ? { g } : {}) }); (S.food[foodDay] = S.food[foodDay] || []).push({ n, k, p, t: nowT(), q: 1, ...(g ? { sg: g, gr: g } : {}) }); save(); rerender();
   },
   delCustomFood(el) { S.customFoods.splice(+el.dataset.i, 1); save(); rerender(); },
   qty(el) { const f = foodOf(foodDay)[+el.dataset.i], dir = +el.dataset.v > 0 ? 1 : -1; if (f.sg) { f.gr = Math.max(10, (f.gr || round(f.q * f.sg)) + dir * 10); f.q = f.gr / f.sg; } else f.q = Math.max(.5, f.q + dir * .5); save(); rerender(); },
   delFood(el) { foodOf(foodDay).splice(+el.dataset.i, 1); save(); rerender(); },
   water(el) {
     const v = +el.dataset.v;
-    if (v > 0) waterAdd(v, foodDay === dk() ? nowT() : '12:00');
+    if (v > 0) waterAdd(v, nowT());
     else { const l = S.waterLog[foodDay] || []; if (l.length) { const w = l.pop(); S.water[foodDay] = Math.max(0, (S.water[foodDay] || 0) - w.ml); } else S.water[foodDay] = Math.max(0, (S.water[foodDay] || 0) + v); }
     save(); rerender();
   },
